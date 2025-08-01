@@ -24,7 +24,7 @@ def get_client_by_code(code=None):
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},  # Replace with your actual field name
-        fields=["name", "email_id", "mobile_no", "custom_customer_code" ],
+        fields=["name", "email_id", "mobile_no", "custom_debt" , "custom_debt_date" ,"custom_customer_code" ],
         limit=1
     )
 
