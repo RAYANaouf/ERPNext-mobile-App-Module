@@ -33,3 +33,42 @@ def get_client_by_code(code=None):
 
     return {"customer": customer[0]}
 
+
+@frappe.whitelist(allow_guest=True)
+def get_invoices_by_customer_code(code=None):
+    """
+    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    """
+    if not code:
+        return {"error": "Missing client code"}
+
+    # Step 1: Get customer by custom code
+    customer = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": code},
+        fields=["name"],
+        limit=1
+    )
+
+    if not customer:
+        return {"error": "Customer not found"}
+
+    customer_name = customer[0].name
+
+    # Step 2: Fetch all Sales Invoices (POS and non-POS)
+    all_invoices = frappe.get_all(
+        "Sales Invoice",
+        filters={"customer": customer_name},
+        fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
+        order_by="posting_date desc"
+    )
+
+    # Separate them
+    pos_invoices = [inv for inv in all_invoices if inv.is_pos]
+    sales_invoices = [inv for inv in all_invoices if not inv.is_pos]
+
+    return {
+        "customer_code": code,
+        "sales_invoices": sales_invoices,
+        "pos_invoices": pos_invoices
+    }
