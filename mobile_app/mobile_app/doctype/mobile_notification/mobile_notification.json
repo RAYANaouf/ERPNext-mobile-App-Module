@@ -8,6 +8,8 @@
  "field_order": [
   "customer",
   "section_break_hsdp",
+  "title",
+  "section_break_hoax",
   "msg",
   "amended_from"
  ],
@@ -22,7 +24,7 @@
   },
   {
    "fieldname": "msg",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Message",
    "reqd": 1
@@ -30,6 +32,21 @@
   {
    "fieldname": "section_break_hsdp",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_hoax",
+   "fieldtype": "Section Break",
+   "no_copy": 1,
+   "options": "Mobile Notification",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "amended_from",
@@ -46,7 +63,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-08 16:59:58.135165",
+ "modified": "2025-08-08 20:36:23.979296",
  "modified_by": "Administrator",
  "module": "Mobile App",
  "name": "Mobile Notification",
