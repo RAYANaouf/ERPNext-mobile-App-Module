@@ -62,13 +62,17 @@ def get_invoices_by_customer_code(code=None):
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc"
     )
-
-    # Separate them
-    pos_invoices = [inv for inv in all_invoices if inv.is_pos]
-    sales_invoices = [inv for inv in all_invoices if not inv.is_pos]
+    
+    # Step 3: Fetch all POS Invoices (non-consolidated) 
+    pos_invoices = frappe.get_all(
+        "POS Invoice",
+        filters  = {"customer": customer_name , "docstatus": 1  },
+        fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
+        order_by ="posting_date desc"
+    )
 
     return {
         "customer_code": code,
-        "sales_invoices": sales_invoices,
+        "sales_invoices": all_invoices,
         "pos_invoices": pos_invoices
     }
