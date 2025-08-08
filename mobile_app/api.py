@@ -105,7 +105,6 @@ def get_notification_by_customer_code(code=None):
         "Mobile Notification",
         filters  ={"customer": customer_name},
         fields   = ["name", "msg"],
-        order_by = "posting_date desc"
     )
     
 
