@@ -76,3 +76,38 @@ def get_invoices_by_customer_code(code=None):
         "sales_invoices": all_invoices,
         "pos_invoices": pos_invoices
     }
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_notification_by_customer_code(code=None):
+    """
+    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    """
+    if not code:
+        return {"error": "Missing client code"}
+
+    # Step 1: Get customer by custom code
+    customer = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": code},
+        fields=["name"],
+        limit=1
+    )
+
+    if not customer:
+        return {"error": "Customer not found"}
+
+    customer_name = customer[0].name
+
+    # Step 2: Fetch all Notification filttred by customer
+    all_notification = frappe.get_all(
+        "Mobile Notification",
+        filters  ={"customer": customer_name},
+        order_by ="posting_date desc"
+    )
+    
+
+    return {
+        "notification": all_notification,
+    }
