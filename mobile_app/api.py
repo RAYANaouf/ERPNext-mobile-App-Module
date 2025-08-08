@@ -104,7 +104,7 @@ def get_notification_by_customer_code(code=None):
     all_notification = frappe.get_all(
         "Mobile Notification",
         filters  ={"customer": customer_name},
-        fields   = ["name", "msg"],
+        fields   = ["name", "msg" , "title"],
     )
     
 
