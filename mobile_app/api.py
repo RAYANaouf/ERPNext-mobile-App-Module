@@ -11,7 +11,7 @@ def hello_world(name=None):
 
 
 
-@frappe.whitelist(allow_guest=True)  # ✅ Allow without login
+@frappe.whitelist(allow_guest=True)  # Allow without login
 def get_client_by_code(code=None):
     """
     Public endpoint to get a customer by their client code (custom field).
@@ -98,11 +98,14 @@ def get_notification_by_customer_code(code=None):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch all Notification filttred by customer
+    # Step 2: Fetch all Notification filtered by customer and only committed docs (docstatus = 1)
     all_notification = frappe.get_all(
         "Mobile Notification",
-        filters  ={"customer": customer_name},
-        fields   = ["name", "msg" , "title"],
+        filters={
+            "customer": customer_name,
+            "docstatus": 1  # Only get committed documents
+        },
+        fields=["name", "msg", "title"],
     )
     
 
