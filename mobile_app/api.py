@@ -112,3 +112,41 @@ def get_notification_by_customer_code(code=None):
     return {
         "notification": all_notification,
     }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_payments_by_customer_code(code=None):
+    """
+    Public endpoint to get payment entries for a customer by their custom code.
+    """
+    if not code:
+        return {"error": "Missing customer code"}
+
+    # Step 1: Get customer by custom code
+    customer = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": code},
+        fields=["name"],
+        limit=1
+    )
+
+    if not customer:
+        return {"error": "Customer not found"}
+
+    customer_name = customer[0].name
+
+    # Step 2: Fetch all Payment Entries for the customer (only committed entries)
+    payment_entries = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "party": customer_name,
+            "docstatus": 1,  # Only get committed documents
+            "party_type": "Customer"
+        },
+        fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment", "reference_no", "reference_date"],
+        order_by="posting_date desc"
+    )
+
+    return {
+        "payments": payment_entries
+    }
