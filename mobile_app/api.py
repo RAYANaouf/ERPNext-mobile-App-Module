@@ -61,7 +61,7 @@ def login(email: str, password: str):
 import frappe
 from frappe import _
 
-@frappe.whitelist(allow_guest=False)
+@frappe.whitelist(allow_guest=True)
 def get_last_stock_entries(token: str, limit: int = 20):
     # If you already have a token validation helper, call it here.
     # Example:
