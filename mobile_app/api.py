@@ -33,9 +33,11 @@ def login(email: str, password: str):
         sid = frappe.session.sid
 
         return {
-            "sid"   : sid,
-            "email" : frappe.session.user,
-            "name"  : frappe.session.data.get("full_name"),
+            "user" : {
+                "sid"   : sid,
+                "email" : frappe.session.user,
+                "name"  : frappe.session.data.get("full_name"),
+            }
         }
 
     except frappe.AuthenticationError:
