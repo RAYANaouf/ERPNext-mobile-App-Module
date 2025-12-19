@@ -248,7 +248,20 @@ app_license = "mit"
 
 
 fixtures = [
+    
+]
+
+fixtures = [
     {
         'dt': 'Custom Field'
+    },
+    {
+        "dt": "Workflow"
+    },
+    {
+        "dt": "Workflow State"
+    },
+    {
+        "dt": "Workflow Action"
     }
 ]
