@@ -70,24 +70,35 @@ def get_last_stock_entries(token: str, limit: int = 20):
 
     limit = int(limit or 20)
 
+    # fetch latest submitted entries
     rows = frappe.get_all(
         "Stock Entry",
         fields=[
             "name",
-            "stock_entry_type",
             "posting_date",
-            "posting_time",
+            "from_warehouse",
+            "to_warehouse",
             "workflow_state",
-            "modified",
-            "creation",
+            "docstatus",
         ],
-        filters={
-            "docstatus" : 1
-        },
+        filters={"docstatus": 1},
         order_by="creation desc",
         limit=limit,
     )
-    return rows
+
+
+    # map to mobile expected keys
+    out = []
+    for r in rows:
+        out.append({
+            "name": r.get("name"),
+            "posting_date": str(r.get("posting_date") or ""),
+            "from": r.get("from_warehouse") or "",
+            "to": r.get("to_warehouse") or "",
+            "status": (r.get("workflow_state") or ("Submitted" if r.get("docstatus") == 1 else "Draft")),
+        })
+
+    return out
 
 
 
