@@ -51,6 +51,50 @@ def login(email: str, password: str):
 
 
 
+################################################################################
+######################  Get All Stock Entry Function ###########################
+################################################################################
+
+
+
+
+import frappe
+from frappe import _
+
+@frappe.whitelist(allow_guest=False)
+def get_last_stock_entries(token: str, limit: int = 20):
+    # If you already have a token validation helper, call it here.
+    # Example:
+    # user = validate_mobile_token(token)
+    # frappe.set_user(user)
+
+    limit = int(limit or 20)
+
+    rows = frappe.get_all(
+        "Stock Entry",
+        fields=[
+            "name",
+            "stock_entry_type",
+            "posting_date",
+            "posting_time",
+            "workflow_state",
+            "modified",
+            "creation",
+        ],
+        filters={
+            "docstatus" : 1
+        },
+        order_by="creation desc",
+        limit=limit,
+    )
+    return rows
+
+
+
+
+
+
+
 @frappe.whitelist(allow_guest=True)  # Allow without login
 def get_client_by_code(code=None):
     """
