@@ -10,6 +10,42 @@ def hello_world(name=None):
 
 
 
+################################################################################
+############################### Log In Function ################################
+################################################################################
+
+
+
+@frappe.whitelist(allow_guest=True)
+def login(email: str, password: str):
+    if not email or not password:
+        return {"ok": False, "error": "Missing email or password"}
+
+    print("the email is", email)
+    print("the password is", password)
+
+    try:
+        login_manager = frappe.auth.LoginManager()
+        login_manager.authenticate(user=email, pwd=password)
+        login_manager.post_login()
+
+        # session id (sid) is also set as cookie automatically if you call via browser.
+        sid = frappe.session.sid
+
+        return {
+            "sid"   : sid,
+            "email" : frappe.session.user,
+            "name"  : frappe.session.data.get("full_name"),
+        }
+
+    except frappe.AuthenticationError:
+        frappe.clear_messages()
+        return {"ok": False, "error": "Invalid credentials"}
+
+
+
+
+
 
 @frappe.whitelist(allow_guest=True)  # Allow without login
 def get_client_by_code(code=None):
@@ -27,7 +63,14 @@ def get_client_by_code(code=None):
     )
 
     if not customer:
-        return {"error": "Customer not found"}
+        user = frappe.get_all(
+            "User",
+            filters={"new_password":code},
+            limit = 1
+        )
+        if not user:
+            return {"error": "Customer or User not found"}
+        return{"user":user[0]}
 
     return {"customer": customer[0]}
 
