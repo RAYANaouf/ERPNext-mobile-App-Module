@@ -84,7 +84,7 @@ def get_last_stock_entries(token: str, limit: int = 20):
             "docstatus",
         ],
         filters={"docstatus": ["in", allowed_docstatus]},
-        order_by="creation desc",
+        order_by="posting_date desc",
         limit=limit,
     )
 
@@ -218,11 +218,14 @@ def get_notification_by_customer_code(code=None):
     }
 
 
+
+
+
+
+import frappe
+
 @frappe.whitelist(allow_guest=True)
 def get_payments_by_customer_code(code=None):
-    """
-    Public endpoint to get payment entries for a customer by their custom code.
-    """
     if not code:
         return {"error": "Missing customer code"}
 
@@ -233,24 +236,71 @@ def get_payments_by_customer_code(code=None):
         fields=["name"],
         limit=1
     )
-
     if not customer:
         return {"error": "Customer not found"}
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch all Payment Entries for the customer (only committed entries)
-    payment_entries = frappe.get_all(
+    # Step 2: Fetch Payment Entries (submitted only)
+    payments = frappe.get_all(
         "Payment Entry",
         filters={
+            "party_type": "Customer",
             "party": customer_name,
-            "docstatus": 1,  # Only get committed documents
-            "party_type": "Customer"
+            "docstatus": 1
         },
-        fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment", "reference_no", "reference_date"],
+        fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
         order_by="posting_date desc"
     )
 
-    return {
-        "payments": payment_entries
-    }
+    if not payments:
+        return {"payments": []}
+
+    pe_names = [p["name"] for p in payments]
+
+    # Step 3: Fetch referenced invoices for those Payment Entries
+    refs = frappe.get_all(
+        "Payment Entry Reference",
+        filters={
+            "parent": ["in", pe_names],
+            "reference_doctype": "Sales Invoice"
+        },
+        fields=[
+            "parent",               # Payment Entry name
+            "reference_name",       # Sales Invoice name
+            "allocated_amount",
+            "total_amount",
+            "outstanding_amount"
+        ],
+        order_by="parent desc"
+    )
+
+    # Step 4: (optional but useful) Get invoice extra info (status, grand_total, outstanding)
+    invoice_names = list({r["reference_name"] for r in refs})
+    invoice_map = {}
+    if invoice_names:
+        invoices = frappe.get_all(
+            "Sales Invoice",
+            filters={"name": ["in", invoice_names]},
+            fields=["name", "posting_date", "status", "grand_total", "outstanding_amount"],
+        )
+        invoice_map = {inv["name"]: inv for inv in invoices}
+
+    # Group references by payment entry
+    refs_by_payment = {}
+    for r in refs:
+        inv = invoice_map.get(r["reference_name"], {})
+        refs_by_payment.setdefault(r["parent"], []).append({
+            "invoice": r["reference_name"],
+            "allocated_amount": r.get("allocated_amount"),
+            "invoice_posting_date": inv.get("posting_date"),
+            "invoice_status": inv.get("status"),
+            "invoice_total": inv.get("grand_total"),
+            "invoice_outstanding": inv.get("outstanding_amount"),
+        })
+
+    # Attach invoices list to each payment
+    for p in payments:
+        p["invoices_payed"] = refs_by_payment.get(p["name"], [])
+
+    return {"payments": payments}
