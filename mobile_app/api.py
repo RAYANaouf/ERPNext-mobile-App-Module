@@ -69,6 +69,8 @@ def get_last_stock_entries(token: str, limit: int = 20):
     # frappe.set_user(user)
 
     limit = int(limit or 20)
+    # docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+    allowed_docstatus = [0, 1]
 
     # fetch latest submitted entries
     rows = frappe.get_all(
@@ -81,7 +83,7 @@ def get_last_stock_entries(token: str, limit: int = 20):
             "workflow_state",
             "docstatus",
         ],
-        filters={"docstatus": 1},
+        filters={"docstatus": ["in", allowed_docstatus]},
         order_by="creation desc",
         limit=limit,
     )
