@@ -31,12 +31,14 @@ def login(email: str, password: str):
 
         # session id (sid) is also set as cookie automatically if you call via browser.
         sid = frappe.session.sid
+        # reliable full name
+        full_name = frappe.db.get_value("User", user_id, "full_name") or frappe.get_fullname(user_id) or user_id
 
         return {
             "user" : {
                 "sid"   : sid,
                 "email" : frappe.session.user,
-                "name"  : frappe.session.data.get("full_name"),
+                "name"  : full_name,
             }
         }
 
