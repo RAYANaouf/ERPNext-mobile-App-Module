@@ -108,6 +108,60 @@ def get_last_stock_entries(token: str, limit: int = 20):
 
 
 
+
+@frappe.whitelist(allow_guest=True)
+def get_stock_entry_details_by_name(token: str, name: str):
+    """
+    Public endpoint to get Stock Entry full details by document name.
+    Returns: header + items rows.
+    """
+
+    # If you already have a token validation helper, call it here.
+    # user = validate_mobile_token(token)
+    # frappe.set_user(user)
+
+    if not name:
+        return {"error": "Missing Stock Entry name"}
+
+    # Ensure Stock Entry exists
+    if not frappe.db.exists("Stock Entry", name):
+        return {"error": "Stock Entry not found"}
+
+    doc = frappe.get_doc("Stock Entry", name)
+
+    # Optional: prevent exposing cancelled docs
+    if doc.docstatus == 2:
+        return {"error": "Stock Entry is cancelled"}
+
+
+    # Items
+    items = []
+    for it in (doc.get("items") or []):
+        items.append({
+            "idx": it.idx,
+            "item_code": it.item_code or "",
+            "s_warehouse": it.s_warehouse or "",
+            "t_warehouse": it.t_warehouse or "",
+            "qty": float(it.qty or 0),
+            "basic_rate": float(it.basic_rate or 0),
+            "valuation_rate": float(it.valuation_rate or 0),
+        })
+
+    return {
+        "name": doc.name,
+        "posting_date": str(doc.posting_date or ""),
+        "from": doc.from_warehouse or "",
+        "to": doc.to_warehouse or "",
+        "company": doc.company or "",
+        "status": doc.workflow_state,
+        "items": items,
+    }
+
+
+
+
+
+
 @frappe.whitelist(allow_guest=True)  # Allow without login
 def get_client_by_code(code=None):
     """
@@ -216,9 +270,6 @@ def get_notification_by_customer_code(code=None):
     return {
         "notification": all_notification,
     }
-
-
-
 
 
 
