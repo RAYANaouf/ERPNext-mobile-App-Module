@@ -152,7 +152,7 @@ def get_stock_entry_details_by_name(token: str, name: str):
             "toWarehouse": doc.to_warehouse or "",
             "company": doc.company or "",
             "status": doc.workflow_state,
-        }
+        },
         "items": items,
     }
 
