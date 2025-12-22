@@ -58,9 +58,6 @@ def login(email: str, password: str):
 
 
 
-import frappe
-from frappe import _
-
 @frappe.whitelist(allow_guest=True)
 def get_last_stock_entries(token: str, limit: int = 20):
     # If you already have a token validation helper, call it here.
@@ -148,12 +145,14 @@ def get_stock_entry_details_by_name(token: str, name: str):
         })
 
     return {
-        "name": doc.name,
-        "posting_date": str(doc.posting_date or ""),
-        "from": doc.from_warehouse or "",
-        "to": doc.to_warehouse or "",
-        "company": doc.company or "",
-        "status": doc.workflow_state,
+        "stockEntry" : {
+            "name": doc.name,
+            "postingDate": str(doc.posting_date or ""),
+            "fromWarehouse": doc.from_warehouse or "",
+            "toWarehouse": doc.to_warehouse or "",
+            "company": doc.company or "",
+            "status": doc.workflow_state,
+        }
         "items": items,
     }
 
