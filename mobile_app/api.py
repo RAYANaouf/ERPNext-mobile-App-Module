@@ -135,13 +135,13 @@ def get_stock_entry_details_by_name(token: str, name: str):
     items = []
     for it in (doc.get("items") or []):
         items.append({
-            "idx": it.idx,
-            "item_code": it.item_code or "",
-            "s_warehouse": it.s_warehouse or "",
-            "t_warehouse": it.t_warehouse or "",
-            "qty": float(it.qty or 0),
-            "basic_rate": float(it.basic_rate or 0),
-            "valuation_rate": float(it.valuation_rate or 0),
+            "id"             : it.name    
+            "idx"            : it.idx,
+            "itemName"       : it.item_code or "",
+            "stockEntryName" : it.item_code or "",
+            "fromWarehouse"  : it.s_warehouse or "",
+            "toWarehouse"    : it.t_warehouse or "",
+            "quantity"       : float(it.qty or 0),
         })
 
     return {
