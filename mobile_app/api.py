@@ -135,7 +135,7 @@ def get_stock_entry_details_by_name(token: str, name: str):
     items = []
     for it in (doc.get("items") or []):
         items.append({
-            "id"             : it.name    
+            "id"             : it.name,  
             "idx"            : it.idx,
             "itemName"       : it.item_code or "",
             "stockEntryName" : it.item_code or "",
