@@ -221,7 +221,7 @@ def get_invoices_by_customer_code(code=None):
     # Step 3: Fetch all POS Invoices (non-consolidated) 
     pos_invoices = frappe.get_all(
         "POS Invoice",
-        filters  = {"customer": customer_name , "docstatus": 1  },
+        filters  = {"customer": customer_name , "docstatus": 1 , "is_consolidated": 0},
         fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by ="posting_date desc"
     )
