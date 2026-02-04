@@ -4,6 +4,69 @@
   "completed_by_role": "All",
   "docstatus": 0,
   "doctype": "Workflow Action",
+  "modified": "2026-02-03 11:05:07.087490",
+  "name": "kpuc7uldnc",
+  "permitted_roles": [
+   {
+    "parent": "kpuc7uldnc",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2025-00021",
+  "status": "Completed",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
+  "completed_by": "Administrator",
+  "completed_by_role": "All",
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-02-03 14:54:44.956567",
+  "name": "rbhho5i029",
+  "permitted_roles": [
+   {
+    "parent": "rbhho5i029",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2025-00021",
+  "status": "Completed",
+  "user": null,
+  "workflow_state": "Approved"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-02-03 14:54:55.879773",
+  "name": "reu6vp7sr7",
+  "permitted_roles": [
+   {
+    "parent": "reu6vp7sr7",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2025-00021-1",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
+  "completed_by": "Administrator",
+  "completed_by_role": "All",
+  "docstatus": 0,
+  "doctype": "Workflow Action",
   "modified": "2025-12-19 01:11:22.489058",
   "name": "sd9vs839m6",
   "permitted_roles": [

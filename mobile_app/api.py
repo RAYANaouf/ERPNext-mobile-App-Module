@@ -142,6 +142,7 @@ def get_stock_entry_details_by_name(token: str, name: str):
             "fromWarehouse"  : it.s_warehouse or "",
             "toWarehouse"    : it.t_warehouse or "",
             "quantity"       : int(it.qty or 0),
+            
         })
 
     return {
@@ -275,9 +276,12 @@ def get_notification_by_customer_code(code=None):
 import frappe
 
 @frappe.whitelist(allow_guest=True)
-def get_payments_by_customer_code(code=None):
+def get_invoices_by_customer_code(code=None):
+    """
+    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    """
     if not code:
-        return {"error": "Missing customer code"}
+        return {"error": "Missing client code"}
 
     # Step 1: Get customer by custom code
     customer = frappe.get_all(
@@ -286,71 +290,180 @@ def get_payments_by_customer_code(code=None):
         fields=["name"],
         limit=1
     )
+
     if not customer:
         return {"error": "Customer not found"}
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch Payment Entries (submitted only)
-    payments = frappe.get_all(
-        "Payment Entry",
-        filters={
-            "party_type": "Customer",
-            "party": customer_name,
-            "docstatus": 1
-        },
-        fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
+    # Step 2: Fetch all Sales Invoices (POS and non-POS)
+    all_invoices = frappe.get_all(
+        "Sales Invoice",
+        filters={"customer": customer_name},
+        fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc"
     )
-
-    if not payments:
-        return {"payments": []}
-
-    pe_names = [p["name"] for p in payments]
-
-    # Step 3: Fetch referenced invoices for those Payment Entries
-    refs = frappe.get_all(
-        "Payment Entry Reference",
-        filters={
-            "parent": ["in", pe_names],
-            "reference_doctype": "Sales Invoice"
-        },
-        fields=[
-            "parent",               # Payment Entry name
-            "reference_name",       # Sales Invoice name
-            "allocated_amount",
-            "total_amount",
-            "outstanding_amount"
-        ],
-        order_by="parent desc"
+    
+    # Step 3: Fetch all POS Invoices (non-consolidated) 
+    pos_invoices = frappe.get_all(
+        "POS Invoice",
+        filters  = {"customer": customer_name , "docstatus": 1 },
+        fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
+        order_by ="posting_date desc"
     )
 
-    # Step 4: (optional but useful) Get invoice extra info (status, grand_total, outstanding)
-    invoice_names = list({r["reference_name"] for r in refs})
-    invoice_map = {}
-    if invoice_names:
-        invoices = frappe.get_all(
-            "Sales Invoice",
-            filters={"name": ["in", invoice_names]},
-            fields=["name", "posting_date", "status", "grand_total", "outstanding_amount"],
-        )
-        invoice_map = {inv["name"]: inv for inv in invoices}
+    return {
+        "customer_code": code,
+        "sales_invoices": all_invoices,
+        "pos_invoices": pos_invoices
+    }
 
-    # Group references by payment entry
-    refs_by_payment = {}
-    for r in refs:
-        inv = invoice_map.get(r["reference_name"], {})
-        refs_by_payment.setdefault(r["parent"], []).append({
-            "invoice": r["reference_name"],
-            "allocated_amount": r.get("allocated_amount"),
-            "invoice_posting_date": inv.get("posting_date"),
-            "invoice_status": inv.get("status"),
-            "invoice_total": inv.get("grand_total"),
-            "invoice_outstanding": inv.get("outstanding_amount"),
-        })
 
-    # Attach invoices list to each payment
-    for p in payments:
-        p["invoices_payed"] = refs_by_payment.get(p["name"], [])
 
-    return {"payments": payments}
+@frappe.whitelist(allow_guest=True)
+def get_single_invoice_details(invoice_name=None):
+    """
+    Get invoice details with items - SAFE VERSION
+    """
+    try:
+        # Log pour debug
+        frappe.log_error(f"get_single_invoice_details called with: {invoice_name}", "Invoice Detail Debug")
+        
+        if not invoice_name:
+            return {"error": "Missing invoice name"}
+        
+        # Essayer Sales Invoice d'abord
+        invoice_type = "Sales Invoice"
+        if not frappe.db.exists(invoice_type, invoice_name):
+            # Essayer POS Invoice
+            invoice_type = "POS Invoice"
+            if not frappe.db.exists(invoice_type, invoice_name):
+                return {"error": "Invoice not found"}
+        
+        frappe.log_error(f"Found invoice type: {invoice_type}", "Invoice Detail Debug")
+        
+        # Méthode 1 : Utiliser get_doc (plus sûr)
+        doc = frappe.get_doc(invoice_type, invoice_name)
+        
+        # Construire les items
+        items = []
+        for item in doc.items:
+            items.append({
+                "item_code": item.item_code or "",
+                "item_name": item.item_name or item.item_code or "",
+                "qty": float(item.qty or 0),
+                "rate": float(item.rate or 0),
+                "amount": float(item.amount or 0),
+            })
+        
+        # Construire la réponse
+        response = {
+            "invoice": {
+                "name": doc.name,
+                "posting_date": str(doc.posting_date or ""),
+                "grand_total": float(doc.grand_total or 0),
+                "outstanding_amount": float(doc.outstanding_amount or 0),
+                "status": doc.status or "",
+                "total_qty": len(items),
+            },
+            "items": items,
+        }
+        
+        frappe.log_error(f"Success! Returning {len(items)} items", "Invoice Detail Debug")
+        return response
+        
+    except Exception as e:
+        error_message = f"Error in get_single_invoice_details: {str(e)}"
+        frappe.log_error(error_message, "Invoice Detail Error")
+        frappe.log_error(frappe.get_traceback(), "Invoice Detail Traceback")
+        return {"error": str(e)}
+    
+    
+    
+
+@frappe.whitelist()
+def manage_stock_entry(name=None, items=None, action="save"):
+    import json
+
+    try:
+        
+        if frappe.request.method == "POST":
+            try:
+                data = json.loads(frappe.request.data)
+                name = name or data.get("name")
+                items = items or data.get("items")
+                action = action or data.get("action", "save")
+            except:
+                pass  # Fallback sur les paramètres form-data
+        
+        # Vérifier utilisateur
+        if frappe.session.user == "Guest":
+            return {"error": "Not authenticated"}
+
+        if not name or not items:
+            return {"error": "Missing parameters"}
+
+        if not frappe.db.exists("Stock Entry", name):
+            return {"error": "Stock Entry not found"}
+
+        doc = frappe.get_doc("Stock Entry", name)
+
+        # Seulement Pending (docstatus = 0)
+        if doc.docstatus != 0:
+            return {"error": "Already approved or cancelled"}
+
+        # Mise à jour items
+        
+        if isinstance(items, str):
+            new_items = json.loads(items)
+        else:
+            new_items = items
+            
+        doc.set("items", [])
+
+        for it in new_items:
+            item_code = it.get("itemName")
+            if not frappe.db.exists("Item", item_code):
+                continue
+
+            doc.append("items", {
+                "item_code": item_code,
+                "qty": it.get("quantity", 0),
+                "s_warehouse": it.get("fromWarehouse"),
+                "t_warehouse": it.get("toWarehouse"),
+            })
+
+        # Save normal (avec permissions utilisateur)
+        doc.save()
+
+        # Approve si demandé
+        if action == "approve":
+            doc.submit()
+            frappe.db.commit()
+            return {"message": "Success", "detail": "Approved "}
+
+        frappe.db.commit()
+        return {"message": "Success", "detail": "Saved"}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "manage_stock_entry error")
+        return {"error": str(e)}
+    
+
+@frappe.whitelist(allow_guest=True)
+def search_items(token=None, search_text=None):
+    """
+    Retourne les articles actifs pour autocomplete.
+    """
+    if not search_text:
+        return []
+
+    return frappe.get_all(
+        "Item",
+        filters={
+            "item_code": ["like", f"%{search_text}%"],
+            "disabled": 0
+        },
+        fields=["item_code", "item_name"],
+        limit=10
+    )
