@@ -381,74 +381,124 @@ def get_single_invoice_details(invoice_name=None):
     
     
 
-@frappe.whitelist()
-def manage_stock_entry(name=None, items=None, action="save"):
-    import json
+import frappe
+import json
+
+@frappe.whitelist(allow_guest=True)
+def manage_stock_entry(name=None, items=None, action="save", token=None):
 
     try:
-        
-        if frappe.request.method == "POST":
-            try:
-                data = json.loads(frappe.request.data)
+        frappe.log_error("=== manage_stock_entry called ===", "Stock Entry Debug")
+
+        # ==============================
+        # RÉCUPÉRER LE TOKEN
+        # ==============================
+        if not token:
+            token = frappe.form_dict.get("token")
+
+        # ==============================
+        # LECTURE JSON BODY
+        # ==============================
+        if frappe.request and frappe.request.method == "POST":
+            content_type = frappe.request.headers.get("Content-Type", "")
+
+            if "application/json" in content_type:
+                data = json.loads(frappe.request.data or "{}")
                 name = name or data.get("name")
                 items = items or data.get("items")
-                action = action or data.get("action", "save")
-            except:
-                pass  # Fallback sur les paramètres form-data
-        
-        # Vérifier utilisateur
-        if frappe.session.user == "Guest":
-            return {"error": "Not authenticated"}
+                action = data.get("action", action)
+                token = token or data.get("token")
 
+        # ==============================
+        # VALIDATION TOKEN
+        # ==============================
+        if not token:
+            return {"error": "Authentication required - no token"}
+
+        # ==============================
+        # VALIDATION PARAMÈTRES
+        # ==============================
         if not name or not items:
-            return {"error": "Missing parameters"}
+            return {"error": "Missing parameters: name or items"}
 
         if not frappe.db.exists("Stock Entry", name):
-            return {"error": "Stock Entry not found"}
+            return {"error": f"Stock Entry '{name}' not found"}
 
+        # ==============================
+        # CHARGEMENT DU DOCUMENT
+        # ==============================
         doc = frappe.get_doc("Stock Entry", name)
 
-        # Seulement Pending (docstatus = 0)
         if doc.docstatus != 0:
-            return {"error": "Already approved or cancelled"}
+            return {"error": "Stock Entry already submitted or cancelled"}
 
-        # Mise à jour items
-        
+        # ==============================
+        # PARSER ITEMS
+        # ==============================
         if isinstance(items, str):
-            new_items = json.loads(items)
-        else:
-            new_items = items
-            
-        doc.set("items", [])
+            items = json.loads(items)
 
-        for it in new_items:
-            item_code = it.get("itemName")
+        # ==============================
+        # INDEX DES ARTICLES EXISTANTS
+        # ==============================
+        existing_items = {row.item_code: row for row in doc.items}
+
+        # ==============================
+        # AJOUT / UPDATE DES ARTICLES
+        # ==============================
+        for it in items:
+            item_code = it.get("item_code") or it.get("itemName")
+
+            if not item_code:
+                continue
+
             if not frappe.db.exists("Item", item_code):
                 continue
 
-            doc.append("items", {
-                "item_code": item_code,
-                "qty": it.get("quantity", 0),
-                "s_warehouse": it.get("fromWarehouse"),
-                "t_warehouse": it.get("toWarehouse"),
-            })
+            qty = float(it.get("quantity", 0))
 
-        # Save normal (avec permissions utilisateur)
-        doc.save()
+            # 🔁 ARTICLE EXISTANT → UPDATE
+            if item_code in existing_items:
+                row = existing_items[item_code]
+                row.qty = qty
+                row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
+                row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
 
-        # Approve si demandé
+            # ➕ NOUVEL ARTICLE
+            else:
+                doc.append("items", {
+                    "item_code": item_code,
+                    "qty": qty,
+                    "s_warehouse": it.get("fromWarehouse"),
+                    "t_warehouse": it.get("toWarehouse"),
+                })
+
+        # ==============================
+        # SAVE
+        # ==============================
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        # ==============================
+        # SUBMIT SI APPROVE
+        # ==============================
         if action == "approve":
             doc.submit()
             frappe.db.commit()
-            return {"message": "Success", "detail": "Approved "}
+            return {
+                "message": "Success",
+                "detail": f"Stock Entry {name} approved successfully"
+            }
 
-        frappe.db.commit()
-        return {"message": "Success", "detail": "Saved"}
+        return {
+            "message": "Success",
+            "detail": f"Stock Entry {name} saved successfully"
+        }
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "manage_stock_entry error")
         return {"error": str(e)}
-    
+
 
 @frappe.whitelist(allow_guest=True)
 def search_items(token=None, search_text=None):
@@ -458,7 +508,7 @@ def search_items(token=None, search_text=None):
     if not search_text:
         return []
 
-    return frappe.get_all(
+    items = frappe.get_all(
         "Item",
         filters={
             "item_code": ["like", f"%{search_text}%"],
@@ -467,4 +517,24 @@ def search_items(token=None, search_text=None):
         fields=["item_code", "item_name"],
         limit=10
     )
-#############
+    
+    # Aussi chercher par item_name
+    items_by_name = frappe.get_all(
+        "Item",
+        filters={
+            "item_name": ["like", f"%{search_text}%"],
+            "disabled": 0
+        },
+        fields=["item_code", "item_name"],
+        limit=10
+    )
+    
+    # Combiner et dédupliquer
+    seen = set()
+    result = []
+    for item in items + items_by_name:
+        if item['item_code'] not in seen:
+            seen.add(item['item_code'])
+            result.append(item)
+    
+    return result[:10]  # Limiter à 10 résultats
