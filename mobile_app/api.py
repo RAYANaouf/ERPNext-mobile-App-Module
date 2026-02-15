@@ -59,17 +59,11 @@ def login(email: str, password: str):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_last_stock_entries(token: str, limit: int = 20):
-    # If you already have a token validation helper, call it here.
-    # Example:
-    # user = validate_mobile_token(token)
-    # frappe.set_user(user)
-
+def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0): 
     limit = int(limit or 20)
-    # docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+    offset = int(offset or 0) 
     allowed_docstatus = [0, 1]
 
-    # fetch latest submitted entries
     rows = frappe.get_all(
         "Stock Entry",
         fields=[
@@ -83,6 +77,7 @@ def get_last_stock_entries(token: str, limit: int = 20):
         filters={"docstatus": ["in", allowed_docstatus]},
         order_by="posting_date desc",
         limit=limit,
+        start=offset
     )
 
 
@@ -101,11 +96,6 @@ def get_last_stock_entries(token: str, limit: int = 20):
 
 
 
-
-
-
-
-
 @frappe.whitelist(allow_guest=True)
 def get_stock_entry_details_by_name(token: str, name: str):
     """
@@ -116,7 +106,6 @@ def get_stock_entry_details_by_name(token: str, name: str):
     # If you already have a token validation helper, call it here.
     # user = validate_mobile_token(token)
     # frappe.set_user(user)
-
     if not name:
         return {"error": "Missing Stock Entry name"}
 
@@ -190,50 +179,6 @@ def get_client_by_code(code=None):
     return {"customer": customer[0]}
 
 
-@frappe.whitelist(allow_guest=True)
-def get_invoices_by_customer_code(code=None):
-    """
-    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
-    """
-    if not code:
-        return {"error": "Missing client code"}
-
-    # Step 1: Get customer by custom code
-    customer = frappe.get_all(
-        "Customer",
-        filters={"custom_customer_code": code},
-        fields=["name"],
-        limit=1
-    )
-
-    if not customer:
-        return {"error": "Customer not found"}
-
-    customer_name = customer[0].name
-
-    # Step 2: Fetch all Sales Invoices (POS and non-POS)
-    all_invoices = frappe.get_all(
-        "Sales Invoice",
-        filters={"customer": customer_name},
-        fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by="posting_date desc"
-    )
-    
-    # Step 3: Fetch all POS Invoices (non-consolidated) 
-    pos_invoices = frappe.get_all(
-        "POS Invoice",
-        filters  = {"customer": customer_name , "docstatus": 1 , "is_consolidated": 0},
-        fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by ="posting_date desc"
-    )
-
-    return {
-        "customer_code": code,
-        "sales_invoices": all_invoices,
-        "pos_invoices": pos_invoices
-    }
-
-
 
 @frappe.whitelist(allow_guest=True)
 def get_notification_by_customer_code(code=None):
@@ -276,14 +221,18 @@ def get_notification_by_customer_code(code=None):
 import frappe
 
 @frappe.whitelist(allow_guest=True)
-def get_invoices_by_customer_code(code=None):
+def get_invoices_by_customer_code(code=None, limit=20, offset=0):
     """
-    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    Récupère les factures avec pagination.
     """
     if not code:
         return {"error": "Missing client code"}
 
-    # Step 1: Get customer by custom code
+    # Conversion en int pour être sûr
+    limit = int(limit) if limit else 20
+    offset = int(offset) if offset else 0
+
+    # Step 1: Get customer
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
@@ -296,28 +245,118 @@ def get_invoices_by_customer_code(code=None):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch all Sales Invoices (POS and non-POS)
-    all_invoices = frappe.get_all(
+    # Step 2: Fetch Sales Invoices avec Pagination
+    sales_invoices = frappe.get_all(
         "Sales Invoice",
         filters={"customer": customer_name},
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by="posting_date desc"
+        order_by="posting_date desc",
+        limit=limit,   # Limite (ex: 20)
+        start=offset   # Début (ex: 0, 20, 40...)
     )
     
-    # Step 3: Fetch all POS Invoices (non-consolidated) 
+    # Step 3: Fetch POS Invoices avec Pagination
     pos_invoices = frappe.get_all(
         "POS Invoice",
-        filters  = {"customer": customer_name , "docstatus": 1 },
-        fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by ="posting_date desc"
+        filters={"customer": customer_name, "docstatus": 1},
+        fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
+        order_by="posting_date desc",
+        limit=limit,
+        start=offset
     )
 
     return {
         "customer_code": code,
-        "sales_invoices": all_invoices,
+        "sales_invoices": sales_invoices,
         "pos_invoices": pos_invoices
     }
 
+
+
+
+
+import frappe
+
+@frappe.whitelist(allow_guest=True)
+def get_payments_by_customer_code(code=None):
+    if not code:
+        return {"error": "Missing customer code"}
+
+    # Step 1: Get customer by custom code
+    customer = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": code},
+        fields=["name"],
+        limit=1
+    )
+    if not customer:
+        return {"error": "Customer not found"}
+
+    customer_name = customer[0].name
+
+    # Step 2: Fetch Payment Entries (submitted only)
+    payments = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "party_type": "Customer",
+            "party": customer_name,
+            "docstatus": 1
+        },
+        fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
+        order_by="posting_date desc"
+    )
+
+    if not payments:
+        return {"payments": []}
+
+    pe_names = [p["name"] for p in payments]
+
+    # Step 3: Fetch referenced invoices for those Payment Entries
+    refs = frappe.get_all(
+        "Payment Entry Reference",
+        filters={
+            "parent": ["in", pe_names],
+            "reference_doctype": "Sales Invoice"
+        },
+        fields=[
+            "parent",               # Payment Entry name
+            "reference_name",       # Sales Invoice name
+            "allocated_amount",
+            "total_amount",
+            "outstanding_amount"
+        ],
+        order_by="parent desc"
+    )
+
+    # Step 4: (optional but useful) Get invoice extra info (status, grand_total, outstanding)
+    invoice_names = list({r["reference_name"] for r in refs})
+    invoice_map = {}
+    if invoice_names:
+        invoices = frappe.get_all(
+            "Sales Invoice",
+            filters={"name": ["in", invoice_names]},
+            fields=["name", "posting_date", "status", "grand_total", "outstanding_amount"],
+        )
+        invoice_map = {inv["name"]: inv for inv in invoices}
+
+    # Group references by payment entry
+    refs_by_payment = {}
+    for r in refs:
+        inv = invoice_map.get(r["reference_name"], {})
+        refs_by_payment.setdefault(r["parent"], []).append({
+            "invoice": r["reference_name"],
+            "allocated_amount": r.get("allocated_amount"),
+            "invoice_posting_date": inv.get("posting_date"),
+            "invoice_status": inv.get("status"),
+            "invoice_total": inv.get("grand_total"),
+            "invoice_outstanding": inv.get("outstanding_amount"),
+        })
+
+    # Attach invoices list to each payment
+    for p in payments:
+        p["invoices_payed"] = refs_by_payment.get(p["name"], [])
+
+    return {"payments": payments}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -342,15 +381,14 @@ def get_single_invoice_details(invoice_name=None):
         
         frappe.log_error(f"Found invoice type: {invoice_type}", "Invoice Detail Debug")
         
-        # Méthode 1 : Utiliser get_doc (plus sûr)
+        # Utiliser get_doc 
         doc = frappe.get_doc(invoice_type, invoice_name)
         
         # Construire les items
         items = []
         for item in doc.items:
             items.append({
-                "item_code": item.item_code or "",
-                "item_name": item.item_name or item.item_code or "",
+                "item_code": item.item_code,
                 "qty": float(item.qty or 0),
                 "rate": float(item.rate or 0),
                 "amount": float(item.amount or 0),
@@ -379,23 +417,31 @@ def get_single_invoice_details(invoice_name=None):
         return {"error": str(e)}
     
     
+
+def validate_mobile_token(token):
+    if not token:
+        return None
     
+    user = frappe.db.sql("""
+        SELECT user FROM `tabSessions` 
+        WHERE sid = %s
+    """, (token,), pluck=True)
+
+    return user[0] if user else None
 
 import frappe
 import json
 
 @frappe.whitelist(allow_guest=True)
-def manage_stock_entry(name=None, items=None, action="save", token=None):
+def manage_stock_entry(name=None, items=None, action="save" , token=None):
 
     try:
         frappe.log_error("=== manage_stock_entry called ===", "Stock Entry Debug")
 
-        # ==============================
-        # RÉCUPÉRER LE TOKEN
-        # ==============================
-        if not token:
-            token = frappe.form_dict.get("token")
-
+        user = validate_mobile_token(token)  
+        if not user:
+            return {"error": "Invalid or missing token"}
+        print("the name is", user)
         # ==============================
         # LECTURE JSON BODY
         # ==============================
@@ -407,13 +453,8 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
                 name = name or data.get("name")
                 items = items or data.get("items")
                 action = data.get("action", action)
-                token = token or data.get("token")
+              
 
-        # ==============================
-        # VALIDATION TOKEN
-        # ==============================
-        if not token:
-            return {"error": "Authentication required - no token"}
 
         # ==============================
         # VALIDATION PARAMÈTRES
@@ -457,14 +498,14 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
 
             qty = float(it.get("quantity", 0))
 
-            # 🔁 ARTICLE EXISTANT → UPDATE
+            # ARTICLE EXISTANT → UPDATE
             if item_code in existing_items:
                 row = existing_items[item_code]
                 row.qty = qty
                 row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
                 row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
 
-            # ➕ NOUVEL ARTICLE
+            #  NOUVEL ARTICLE
             else:
                 doc.append("items", {
                     "item_code": item_code,
@@ -500,41 +541,22 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
         return {"error": str(e)}
 
 
+import frappe
+
 @frappe.whitelist(allow_guest=True)
 def search_items(token=None, search_text=None):
-    """
-    Retourne les articles actifs pour autocomplete.
-    """
+  
     if not search_text:
         return []
 
     items = frappe.get_all(
         "Item",
         filters={
-            "item_code": ["like", f"%{search_text}%"],
+            "item_code": ["like", f"%{search_text}%"], 
             "disabled": 0
         },
         fields=["item_code", "item_name"],
-        limit=10
+        limit=10 
     )
     
-    # Aussi chercher par item_name
-    items_by_name = frappe.get_all(
-        "Item",
-        filters={
-            "item_name": ["like", f"%{search_text}%"],
-            "disabled": 0
-        },
-        fields=["item_code", "item_name"],
-        limit=10
-    )
-    
-    # Combiner et dédupliquer
-    seen = set()
-    result = []
-    for item in items + items_by_name:
-        if item['item_code'] not in seen:
-            seen.add(item['item_code'])
-            result.append(item)
-    
-    return result[:10]  # Limiter à 10 résultats
+    return items

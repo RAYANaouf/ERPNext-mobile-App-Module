@@ -7,11 +7,16 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
+  "cb1",
+  "publish_date",
+  "section_break_vptg",
   "description",
   "announcement_typ",
-  "publish_date",
-  "target_all_customers",
-  "customers"
+  "section_break_yxig",
+  "allowed",
+  "column_break_ikok",
+  "banned",
+  "amended_from"
  ],
  "fields": [
   {
@@ -23,7 +28,7 @@
   },
   {
    "fieldname": "description",
-   "fieldtype": "Text Editor",
+   "fieldtype": "Text",
    "label": "Description"
   },
   {
@@ -40,22 +45,49 @@
    "reqd": 1
   },
   {
-   "default": "0",
-   "fieldname": "target_all_customers",
-   "fieldtype": "Check",
-   "label": "Target All Customers"
+   "fieldname": "cb1",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "customers",
+   "fieldname": "section_break_vptg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "allowed",
    "fieldtype": "Table",
-   "label": "Custumers",
+   "label": "Allowed Custumers",
    "options": "Mobile Announcement Customer"
+  },
+  {
+   "fieldname": "column_break_ikok",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "banned",
+   "fieldtype": "Table",
+   "label": "Banned Customer",
+   "options": "Mobile Announcement Customer"
+  },
+  {
+   "fieldname": "section_break_yxig",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Mobile Announcement",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2026-01-29 15:12:32.074738",
+ "modified": "2026-02-15 10:55:27.298622",
  "modified_by": "Administrator",
  "module": "Mobile App",
  "name": "Mobile Announcement",
