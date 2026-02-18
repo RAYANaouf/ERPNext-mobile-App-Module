@@ -2,11 +2,29 @@
  {
   "docstatus": 0,
   "doctype": "Workflow State",
-  "icon": "question-sign",
-  "modified": "2025-11-21 03:23:40.883713",
-  "name": "Pending",
+  "icon": "",
+  "modified": "2026-02-02 10:03:05.975664",
+  "name": "Partially Approved",
   "style": "",
-  "workflow_state_name": "Pending"
+  "workflow_state_name": "Partially Approved"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2025-12-31 23:23:12.586861",
+  "name": "Confirmed",
+  "style": "Primary",
+  "workflow_state_name": "Confirmed"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2025-12-31 23:23:21.089906",
+  "name": "Archived",
+  "style": "Inverse",
+  "workflow_state_name": "Archived"
  },
  {
   "docstatus": 0,
@@ -20,10 +38,46 @@
  {
   "docstatus": 0,
   "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-02-04 17:27:43.263397",
+  "name": "Canceled",
+  "style": "",
+  "workflow_state_name": "Canceled"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
   "icon": "remove",
   "modified": "2025-11-21 03:23:40.886182",
   "name": "Rejected",
   "style": "Danger",
   "workflow_state_name": "Rejected"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-02-05 18:43:16.652007",
+  "name": "Checked",
+  "style": "Primary",
+  "workflow_state_name": "Checked"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2025-12-31 22:55:32.802498",
+  "name": "Draft",
+  "style": "",
+  "workflow_state_name": "Draft"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "question-sign",
+  "modified": "2025-11-21 03:23:40.883713",
+  "name": "Pending",
+  "style": "",
+  "workflow_state_name": "Pending"
  }
 ]

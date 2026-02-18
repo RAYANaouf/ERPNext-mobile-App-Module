@@ -354,3 +354,204 @@ def get_payments_by_customer_code(code=None):
         p["invoices_payed"] = refs_by_payment.get(p["name"], [])
 
     return {"payments": payments}
+
+
+
+
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_single_invoice_details(invoice_name=None):
+    """
+    Get invoice details with items - SAFE VERSION
+    """
+    try:
+
+        if not invoice_name:
+            return {"error": "Missing invoice name"}
+        
+        # Essayer Sales Invoice d'abord
+        invoice_type = "Sales Invoice"
+        if not frappe.db.exists(invoice_type, invoice_name):
+            # Essayer POS Invoice
+            invoice_type = "POS Invoice"
+            if not frappe.db.exists(invoice_type, invoice_name):
+                return {"error": "Invoice not found"}
+        
+        frappe.log_error(f"Found invoice type: {invoice_type}", "Invoice Detail Debug")
+        
+        # Méthode 1 : Utiliser get_doc (plus sûr)
+        doc = frappe.get_doc(invoice_type, invoice_name)
+        
+        # Construire les items
+        items = []
+        for item in doc.items:
+            items.append({
+                "item_code": item.item_code or "",
+                "qty": float(item.qty or 0),
+                "rate": float(item.rate or 0),
+                "amount": float(item.amount or 0),
+            })
+        
+        # Construire la réponse
+        response = {
+            "invoice": {
+                "name": doc.name,
+                "posting_date": str(doc.posting_date or ""),
+                "grand_total": float(doc.grand_total or 0),
+                "outstanding_amount": float(doc.outstanding_amount or 0),
+                "status": doc.status or "",
+                "total_qty": len(items),
+            },
+            "items": items,
+        }
+        return response
+        
+    except Exception as e:
+        error_message = f"Error in get_single_invoice_details: {str(e)}"
+        frappe.log_error(error_message, "Invoice Detail Error")
+        frappe.log_error(frappe.get_traceback(), "Invoice Detail Traceback")
+        return {"error": str(e)}
+    
+    
+    
+
+
+@frappe.whitelist(allow_guest=True)
+def manage_stock_entry(name=None, items=None, action="save", token=None):
+
+    try:
+        frappe.log_error("=== manage_stock_entry called ===", "Stock Entry Debug")
+
+        # ==============================
+        # RÉCUPÉRER LE TOKEN
+        # ==============================
+        if not token:
+            token = frappe.form_dict.get("token")
+
+        # ==============================
+        # LECTURE JSON BODY
+        # ==============================
+        if frappe.request and frappe.request.method == "POST":
+            content_type = frappe.request.headers.get("Content-Type", "")
+
+            if "application/json" in content_type:
+                data = json.loads(frappe.request.data or "{}")
+                name = name or data.get("name")
+                items = items or data.get("items")
+                action = data.get("action", action)
+                token = token or data.get("token")
+
+        # ==============================
+        # VALIDATION TOKEN
+        # ==============================
+        if not token:
+            return {"error": "Authentication required - no token"}
+
+        # ==============================
+        # VALIDATION PARAMÈTRES
+        # ==============================
+        if not name or not items:
+            return {"error": "Missing parameters: name or items"}
+
+        if not frappe.db.exists("Stock Entry", name):
+            return {"error": f"Stock Entry '{name}' not found"}
+
+        # ==============================
+        # CHARGEMENT DU DOCUMENT
+        # ==============================
+        doc = frappe.get_doc("Stock Entry", name)
+
+        if doc.docstatus != 0:
+            return {"error": "Stock Entry already submitted or cancelled"}
+
+        # ==============================
+        # PARSER ITEMS
+        # ==============================
+        if isinstance(items, str):
+            items = json.loads(items)
+
+        # ==============================
+        # INDEX DES ARTICLES EXISTANTS
+        # ==============================
+        existing_items = {row.item_code: row for row in doc.items}
+
+        # ==============================
+        # AJOUT / UPDATE DES ARTICLES
+        # ==============================
+        for it in items:
+            item_code = it.get("item_code") or it.get("itemName")
+
+            if not item_code:
+                continue
+
+            if not frappe.db.exists("Item", item_code):
+                continue
+
+            qty = float(it.get("quantity", 0))
+
+            # 🔁 ARTICLE EXISTANT → UPDATE
+            if item_code in existing_items:
+                row = existing_items[item_code]
+                row.qty = qty
+                row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
+                row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
+
+            # ➕ NOUVEL ARTICLE
+            else:
+                doc.append("items", {
+                    "item_code": item_code,
+                    "qty": qty,
+                    "s_warehouse": it.get("fromWarehouse"),
+                    "t_warehouse": it.get("toWarehouse"),
+                })
+
+        # ==============================
+        # SAVE
+        # ==============================
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        # ==============================
+        # SUBMIT SI APPROVE
+        # ==============================
+        if action == "approve":
+            doc.submit()
+            frappe.db.commit()
+            return {
+                "message": "Success",
+                "detail": f"Stock Entry {name} approved successfully"
+            }
+
+        return {
+            "message": "Success",
+            "detail": f"Stock Entry {name} saved successfully"
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "manage_stock_entry error")
+        return {"error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def search_items(token=None, search_text=None):
+    """
+    Retourne les articles actifs pour autocomplete.
+    """
+    if not search_text:
+        return []
+
+    items = frappe.get_all(
+        "Item",
+        filters={"disabled": 0},
+        or_filters={
+            "item_code": ["like", f"%{search_text}%"],
+            "item_name": ["like", f"%{search_text}%"]
+        },
+        fields=["item_code"],
+        limit=10
+    )
+    
+    return items  # Limiter à 10 résultats
