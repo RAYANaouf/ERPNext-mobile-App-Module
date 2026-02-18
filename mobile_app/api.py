@@ -59,17 +59,11 @@ def login(email: str, password: str):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_last_stock_entries(token: str, limit: int = 20):
-    # If you already have a token validation helper, call it here.
-    # Example:
-    # user = validate_mobile_token(token)
-    # frappe.set_user(user)
-
+def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0): 
     limit = int(limit or 20)
-    # docstatus: 0 = Draft, 1 = Submitted, 2 = Cancelled
+    offset = int(offset or 0) 
     allowed_docstatus = [0, 1]
 
-    # fetch latest submitted entries
     rows = frappe.get_all(
         "Stock Entry",
         fields=[
@@ -83,6 +77,7 @@ def get_last_stock_entries(token: str, limit: int = 20):
         filters={"docstatus": ["in", allowed_docstatus]},
         order_by="posting_date desc",
         limit=limit,
+        start=offset
     )
 
 
@@ -189,15 +184,20 @@ def get_client_by_code(code=None):
     return {"customer": customer[0]}
 
 
+
 @frappe.whitelist(allow_guest=True)
-def get_invoices_by_customer_code(code=None):
+def get_invoices_by_customer_code(code=None, limit=20, offset=0):
     """
-    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    Récupère les factures avec pagination.
     """
     if not code:
         return {"error": "Missing client code"}
 
-    # Step 1: Get customer by custom code
+    # Conversion en int pour être sûr
+    limit = int(limit) if limit else 20
+    offset = int(offset) if offset else 0
+
+    # Step 1: Get customer
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
@@ -210,27 +210,34 @@ def get_invoices_by_customer_code(code=None):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch all Sales Invoices (POS and non-POS)
-    all_invoices = frappe.get_all(
+    # Step 2: Fetch Sales Invoices avec Pagination
+    sales_invoices = frappe.get_all(
         "Sales Invoice",
         filters={"customer": customer_name},
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by="posting_date desc"
+        order_by="posting_date desc",
+        limit=limit,   # Limite (ex: 20)
+        start=offset   # Début (ex: 0, 20, 40...)
     )
     
-    # Step 3: Fetch all POS Invoices (non-consolidated) 
+    # Step 3: Fetch POS Invoices avec Pagination
     pos_invoices = frappe.get_all(
         "POS Invoice",
-        filters  = {"customer": customer_name , "docstatus": 1  },
-        fields   = ["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
-        order_by ="posting_date desc"
+        filters={"customer": customer_name, "docstatus": 1},
+        fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
+        order_by="posting_date desc",
+        limit=limit,
+        start=offset
     )
 
     return {
         "customer_code": code,
-        "sales_invoices": all_invoices,
+        "sales_invoices": sales_invoices,
         "pos_invoices": pos_invoices
     }
+
+
+
 
 
 
