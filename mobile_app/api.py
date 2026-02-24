@@ -1,5 +1,6 @@
 import frappe
-
+    
+import json
 
 @frappe.whitelist(allow_guest=True)  # Or remove allow_guest for authenticated access only
 def hello_world(name=None):
@@ -423,7 +424,6 @@ def get_single_invoice_details(invoice_name=None):
         return {"error": str(e)}
     
     
-    
 
 
 @frappe.whitelist(allow_guest=True)
@@ -544,9 +544,6 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
 
 @frappe.whitelist(allow_guest=True)
 def search_items(token=None, search_text=None):
-    """
-    Retourne les articles actifs pour autocomplete.
-    """
     if not search_text:
         return []
 
@@ -561,4 +558,4 @@ def search_items(token=None, search_text=None):
         limit=10
     )
     
-    return items  # Limiter à 10 résultats
+    return items  
