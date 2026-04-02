@@ -372,28 +372,24 @@ def get_payments_by_customer_code(code=None):
 
 @frappe.whitelist(allow_guest=True)
 def get_single_invoice_details(invoice_name=None):
-    """
-    Get invoice details with items - SAFE VERSION
-    """
+    
     try:
 
         if not invoice_name:
             return {"error": "Missing invoice name"}
-        
-        # Essayer Sales Invoice d'abord
+    
         invoice_type = "Sales Invoice"
         if not frappe.db.exists(invoice_type, invoice_name):
-            # Essayer POS Invoice
+         
             invoice_type = "POS Invoice"
             if not frappe.db.exists(invoice_type, invoice_name):
                 return {"error": "Invoice not found"}
         
         frappe.log_error(f"Found invoice type: {invoice_type}", "Invoice Detail Debug")
-        
-        # Méthode 1 : Utiliser get_doc (plus sûr)
+      
         doc = frappe.get_doc(invoice_type, invoice_name)
         
-        # Construire les items
+      
         items = []
         for item in doc.items:
             items.append({
@@ -403,7 +399,7 @@ def get_single_invoice_details(invoice_name=None):
                 "amount": float(item.amount or 0),
             })
         
-        # Construire la réponse
+ 
         response = {
             "invoice": {
                 "name": doc.name,
@@ -432,15 +428,9 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
     try:
         frappe.log_error("=== manage_stock_entry called ===", "Stock Entry Debug")
 
-        # ==============================
-        # RÉCUPÉRER LE TOKEN
-        # ==============================
         if not token:
             token = frappe.form_dict.get("token")
 
-        # ==============================
-        # LECTURE JSON BODY
-        # ==============================
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
 
@@ -451,43 +441,28 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
                 action = data.get("action", action)
                 token = token or data.get("token")
 
-        # ==============================
-        # VALIDATION TOKEN
-        # ==============================
+
         if not token:
             return {"error": "Authentication required - no token"}
 
-        # ==============================
-        # VALIDATION PARAMÈTRES
-        # ==============================
+   
         if not name or not items:
             return {"error": "Missing parameters: name or items"}
 
         if not frappe.db.exists("Stock Entry", name):
             return {"error": f"Stock Entry '{name}' not found"}
 
-        # ==============================
-        # CHARGEMENT DU DOCUMENT
-        # ==============================
         doc = frappe.get_doc("Stock Entry", name)
 
         if doc.docstatus != 0:
             return {"error": "Stock Entry already submitted or cancelled"}
 
-        # ==============================
-        # PARSER ITEMS
-        # ==============================
         if isinstance(items, str):
             items = json.loads(items)
 
-        # ==============================
-        # INDEX DES ARTICLES EXISTANTS
-        # ==============================
+    
         existing_items = {row.item_code: row for row in doc.items}
 
-        # ==============================
-        # AJOUT / UPDATE DES ARTICLES
-        # ==============================
         for it in items:
             item_code = it.get("item_code") or it.get("itemName")
 
@@ -499,14 +474,12 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
 
             qty = float(it.get("quantity", 0))
 
-            # 🔁 ARTICLE EXISTANT → UPDATE
             if item_code in existing_items:
                 row = existing_items[item_code]
                 row.qty = qty
                 row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
                 row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
 
-            # ➕ NOUVEL ARTICLE
             else:
                 doc.append("items", {
                     "item_code": item_code,
@@ -515,15 +488,10 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
                     "t_warehouse": it.get("toWarehouse"),
                 })
 
-        # ==============================
-        # SAVE
-        # ==============================
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # ==============================
-        # SUBMIT SI APPROVE
-        # ==============================
+ 
         if action == "approve":
             doc.submit()
             frappe.db.commit()
@@ -559,3 +527,57 @@ def search_items(token=None, search_text=None):
     )
     
     return items  
+    
+
+
+@frappe.whitelist(allow_guest=True)
+def get_announcements_by_customer_code(code=None):
+    if not code:
+        return {"error": "Missing client code"}
+
+    current_date = frappe.utils.today()
+    customer_name = frappe.db.get_value("Customer", {"custom_customer_code": code}, "name")
+    
+    if not customer_name:
+        return {"error": "Customer not found"}
+    announcements = frappe.get_all(
+        "Mobile Announcement", 
+        filters=[
+            ["docstatus", "=", 1],
+            ["publish_date", "<=", current_date],
+            ["expiry_date", ">=", current_date]
+        ],
+        fields=["name", "title", "announcement_typ", "priority", "color", "description", "banner_image"]
+    )
+
+    final_announcements = []
+
+    for ann in announcements:
+        doc = frappe.get_doc("Mobile Announcement", ann.name)
+
+        is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
+        if is_banned:
+            continue
+
+        allowed_list = doc.get("allowed", [])
+        is_allowed = True
+        
+        if allowed_list:
+            is_allowed = any(row.customer == customer_name for row in allowed_list)
+
+        if is_allowed:
+            final_announcements.append({
+                "id": ann.name,
+                "title": ann.title,
+                "type": ann.announcement_typ,
+                "priority": ann.priority,
+                "color": ann.color,
+                "description": ann.description,
+                "image": ann.banner_image
+            })
+
+    return {
+        "customer": customer_name,
+        "count": len(final_announcements),
+        "announcements": final_announcements
+    }

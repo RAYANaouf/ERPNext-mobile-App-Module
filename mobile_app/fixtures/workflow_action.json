@@ -2224,5 +2224,26 @@
   "status": "Completed",
   "user": null,
   "workflow_state": "Approved"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-03-30 11:20:33.775265",
+  "name": "43hknidk6i",
+  "permitted_roles": [
+   {
+    "parent": "43hknidk6i",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2026-00002",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
  }
 ]
