@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestMobileAnnouncement(FrappeTestCase):
+class TestAnnoncemobile(FrappeTestCase):
 	pass

@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class MobileAnnouncement(Document):
+class Annoncemobile(Document):
 	pass

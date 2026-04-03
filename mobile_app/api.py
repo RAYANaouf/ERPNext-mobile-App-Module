@@ -541,7 +541,7 @@ def get_announcements_by_customer_code(code=None):
     if not customer_name:
         return {"error": "Customer not found"}
     announcements = frappe.get_all(
-        "Mobile Announcement", 
+        "Annonce mobile", 
         filters=[
             ["docstatus", "=", 1],
             ["publish_date", "<=", current_date],
@@ -553,7 +553,7 @@ def get_announcements_by_customer_code(code=None):
     final_announcements = []
 
     for ann in announcements:
-        doc = frappe.get_doc("Mobile Announcement", ann.name)
+        doc = frappe.get_doc("Annonce mobile", ann.name)
 
         is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
         if is_banned:
