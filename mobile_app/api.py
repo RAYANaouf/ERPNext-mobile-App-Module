@@ -536,24 +536,30 @@ def get_announcements_by_customer_code(code=None):
         return {"error": "Missing client code"}
 
     current_date = frappe.utils.today()
+    # On récupère le nom du client via son code
     customer_name = frappe.db.get_value("Customer", {"custom_customer_code": code}, "name")
     
     if not customer_name:
         return {"error": "Customer not found"}
+
+    # Récupération des annonces avec le nom correct du DocType
+    # Ajout de ignore_permissions=True pour permettre l'accès aux invités
     announcements = frappe.get_all(
-        "Annonce mobile", 
+        "Annonce mobile",
         filters=[
             ["docstatus", "=", 1],
             ["publish_date", "<=", current_date],
             ["expiry_date", ">=", current_date]
         ],
-        fields=["name", "title", "announcement_typ", "priority", "color", "description", "banner_image"]
+        fields=["name", "title", "announcement_typ", "priority", "color", "description", "banner_image", "publish_date"],
+        ignore_permissions=True
     )
 
     final_announcements = []
 
     for ann in announcements:
-        doc = frappe.get_doc("Annonce mobile", ann.name)
+        # On charge le document complet pour vérifier les listes allowed/banned
+        doc = frappe.get_doc("Annonce mobile", ann.name, ignore_permissions=True)
 
         is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
         if is_banned:
@@ -566,14 +572,20 @@ def get_announcements_by_customer_code(code=None):
             is_allowed = any(row.customer == customer_name for row in allowed_list)
 
         if is_allowed:
+            # Formatage exact pour ton modèle Flutter
             final_announcements.append({
                 "id": ann.name,
                 "title": ann.title,
-                "type": ann.announcement_typ,
-                "priority": ann.priority,
-                "color": ann.color,
-                "description": ann.description,
-                "image": ann.banner_image
+                "subtitle": ann.description or "",       # Mappé pour Flutter
+                "type": ann.announcement_typ or "Info",  # Mappé pour Flutter
+                "priority": ann.priority or "Medium",
+                "icon": "campaign",                      # Icône par défaut pour ton modèle
+                "color": ann.color or "#00A89C",
+                "postedTime": str(ann.publish_date or ""),
+                "isNew": 1,                              # 1 = true dans ton modèle Dart
+                "image": ann.banner_image,
+                "actionLabel": "Voir plus",
+                "actionRoute": None
             })
 
     return {
