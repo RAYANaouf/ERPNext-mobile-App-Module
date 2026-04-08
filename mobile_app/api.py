@@ -586,19 +586,16 @@ def get_announcements_by_customer_code(code=None):
                 "actionLabel": "Voir plus",
                 "actionRoute": None
             })
-
-    return {
+            return {
         "customer": customer_name,
         "count": len(final_announcements),
         "announcements": final_announcements
     }
 
 
-    @frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)
 def create_customer_complaint():
-    """
-    Crée un document 'reclamtion client' à partir des données mobiles.
-    """
+
     try:
         if frappe.request.method != "POST":
             return {"error": "Method not allowed"}
@@ -609,9 +606,8 @@ def create_customer_complaint():
             "doctype": "reclamtion client",
             "client": data.get("client"),
             "date_reception": data.get("date_reception") or frappe.utils.today(),
-            "documents_référence": data.get("reference"),
             "desciption_reclamation": data.get("description"),
-            "docstatus": 0 # Reste en brouillon pour validation par l'admin
+            "docstatus": 0  # Reste en brouillon (Draft)
         })
         
         doc.insert(ignore_permissions=True)
@@ -622,3 +618,5 @@ def create_customer_complaint():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
         return {"error": str(e)}
+
+    
