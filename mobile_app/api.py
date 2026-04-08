@@ -536,14 +536,13 @@ def get_announcements_by_customer_code(code=None):
         return {"error": "Missing client code"}
 
     current_date = frappe.utils.today()
-    # On récupère le nom du client via son code
+
     customer_name = frappe.db.get_value("Customer", {"custom_customer_code": code}, "name")
     
     if not customer_name:
         return {"error": "Customer not found"}
 
-    # Récupération des annonces avec le nom correct du DocType
-    # Ajout de ignore_permissions=True pour permettre l'accès aux invités
+    
     announcements = frappe.get_all(
         "Annonce mobile",
         filters=[
@@ -558,7 +557,7 @@ def get_announcements_by_customer_code(code=None):
     final_announcements = []
 
     for ann in announcements:
-        # On charge le document complet pour vérifier les listes allowed/banned
+        
         doc = frappe.get_doc("Annonce mobile", ann.name, ignore_permissions=True)
 
         is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
@@ -572,17 +571,17 @@ def get_announcements_by_customer_code(code=None):
             is_allowed = any(row.customer == customer_name for row in allowed_list)
 
         if is_allowed:
-            # Formatage exact pour ton modèle Flutter
+            
             final_announcements.append({
                 "id": ann.name,
                 "title": ann.title,
-                "subtitle": ann.description or "",       # Mappé pour Flutter
-                "type": ann.announcement_typ or "Info",  # Mappé pour Flutter
+                "subtitle": ann.description or "",     
+                "type": ann.announcement_typ or "Info",  
                 "priority": ann.priority or "Medium",
-                "icon": "campaign",                      # Icône par défaut pour ton modèle
+                "icon": "campaign",                      
                 "color": ann.color or "#00A89C",
                 "postedTime": str(ann.publish_date or ""),
-                "isNew": 1,                              # 1 = true dans ton modèle Dart
+                "isNew": 1,                            
                 "image": ann.banner_image,
                 "actionLabel": "Voir plus",
                 "actionRoute": None
@@ -593,3 +592,33 @@ def get_announcements_by_customer_code(code=None):
         "count": len(final_announcements),
         "announcements": final_announcements
     }
+
+
+    @frappe.whitelist(allow_guest=True)
+def create_customer_complaint():
+    """
+    Crée un document 'reclamtion client' à partir des données mobiles.
+    """
+    try:
+        if frappe.request.method != "POST":
+            return {"error": "Method not allowed"}
+
+        data = json.loads(frappe.request.data)
+        
+        doc = frappe.get_doc({
+            "doctype": "reclamtion client",
+            "client": data.get("client"),
+            "date_reception": data.get("date_reception") or frappe.utils.today(),
+            "documents_référence": data.get("reference"),
+            "desciption_reclamation": data.get("description"),
+            "docstatus": 0 # Reste en brouillon pour validation par l'admin
+        })
+        
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+        
+        return {"message": "Success", "id": doc.name}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
+        return {"error": str(e)}
