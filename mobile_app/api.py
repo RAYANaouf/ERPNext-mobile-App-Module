@@ -1,45 +1,44 @@
+################################################################################
+# IMPORTS 
+################################################################################
 import frappe
-    
 import json
+from frappe.utils import flt, add_days, today
 
-@frappe.whitelist(allow_guest=True)  # Or remove allow_guest for authenticated access only
+
+################################################################################
+############################## Hello World Function ############################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
 def hello_world(name=None):
     return {
         "message": f"Hello, {name or 'Guest'}!"
     }
 
 
-
-
 ################################################################################
 ############################### Log In Function ################################
 ################################################################################
-
-
 
 @frappe.whitelist(allow_guest=True)
 def login(email: str, password: str):
     if not email or not password:
         return {"ok": False, "error": "Missing email or password"}
 
-    print("the email is", email)
-    print("the password is", password)
-
     try:
         login_manager = frappe.auth.LoginManager()
         login_manager.authenticate(user=email, pwd=password)
         login_manager.post_login()
 
-        # session id (sid) is also set as cookie automatically if you call via browser.
         sid = frappe.session.sid
-        # reliable full name
-        full_name = frappe.db.get_value("User", email, "full_name") 
+        full_name = frappe.db.get_value("User", email, "full_name")
 
         return {
-            "user" : {
-                "sid"   : sid,
-                "email" : frappe.session.user,
-                "name"  : full_name,
+            "user": {
+                "sid":   sid,
+                "email": frappe.session.user,
+                "name":  full_name,
             }
         }
 
@@ -48,21 +47,14 @@ def login(email: str, password: str):
         return {"ok": False, "error": "Invalid credentials"}
 
 
-
-
-
-
 ################################################################################
 ######################  Get All Stock Entry Function ###########################
 ################################################################################
 
-
-
-
 @frappe.whitelist(allow_guest=True)
-def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0): 
+def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0):
     limit = int(limit or 20)
-    offset = int(offset or 0) 
+    offset = int(offset or 0)
     allowed_docstatus = [0, 1]
 
     rows = frappe.get_all(
@@ -81,110 +73,93 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0):
         start=offset
     )
 
-
-    # map to mobile expected keys
     out = []
     for r in rows:
         out.append({
-            "name": r.get("name"),
+            "name":         r.get("name"),
             "posting_date": str(r.get("posting_date") or ""),
-            "from": r.get("from_warehouse") or "",
-            "to": r.get("to_warehouse") or "",
-            "status": (r.get("workflow_state") or ("Submitted" if r.get("docstatus") == 1 else "Draft")),
+            "from":         r.get("from_warehouse") or "",
+            "to":           r.get("to_warehouse") or "",
+            "status":       (r.get("workflow_state") or ("Submitted" if r.get("docstatus") == 1 else "Draft")),
         })
 
     return out
 
 
-
-
-
-
-
+################################################################################
+##################  Get Stock Entry Details Function ###########################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_stock_entry_details_by_name(token: str, name: str):
     """
-    Public endpoint to get Stock Entry full details by document name.
-    Returns: header + items rows.
+    Endpoint pour récupérer les détails complets d'un Stock Entry par son nom.
+    Retourne : header + lignes d'articles.
     """
-
-    # If you already have a token validation helper, call it here.
-    # user = validate_mobile_token(token)
-    # frappe.set_user(user)
-
     if not name:
         return {"error": "Missing Stock Entry name"}
 
-    # Ensure Stock Entry exists
     if not frappe.db.exists("Stock Entry", name):
         return {"error": "Stock Entry not found"}
 
     doc = frappe.get_doc("Stock Entry", name)
 
-    # Optional: prevent exposing cancelled docs
     if doc.docstatus == 2:
         return {"error": "Stock Entry is cancelled"}
 
-
-    # Items
     items = []
     for it in (doc.get("items") or []):
         items.append({
-            "id"             : it.name or "",  
-            "idx"            : it.idx,
-            "itemName"       : it.item_code or "",
-            "stockEntryName" : it.item_code or "",
-            "fromWarehouse"  : it.s_warehouse or "",
-            "toWarehouse"    : it.t_warehouse or "",
-            "quantity"       : int(it.qty or 0),
+            "id":            it.name or "",
+            "idx":           it.idx,
+            "itemName":      it.item_name or it.item_code or "",
+            "stockEntryName": it.item_code or "",
+            "fromWarehouse": it.s_warehouse or "",
+            "toWarehouse":   it.t_warehouse or "",
+            "quantity":      int(it.qty or 0),
         })
 
     return {
-        "stockEntry" : {
-            "name": doc.name,
-            "postingDate": str(doc.posting_date or ""),
+        "stockEntry": {
+            "name":          doc.name,
+            "postingDate":   str(doc.posting_date or ""),
             "fromWarehouse": doc.from_warehouse or "",
-            "toWarehouse": doc.to_warehouse or "",
-            "company": doc.company or "",
-            "status": doc.workflow_state,
+            "toWarehouse":   doc.to_warehouse or "",
+            "company":       doc.company or "",
+            "status":        doc.workflow_state,
         },
         "items": items,
     }
 
 
+################################################################################
+######################  Get Client By Code Function ############################
+################################################################################
 
-
-
-
-@frappe.whitelist(allow_guest=True)  # Allow without login
+@frappe.whitelist(allow_guest=True)
 def get_client_by_code(code=None):
     """
-    Public endpoint to get a customer by their client code (custom field).
+    Endpoint pour récupérer un client par son code personnalisé.
     """
     if not code:
         return {"error": "Missing client code"}
 
     customer = frappe.get_all(
         "Customer",
-        filters={"custom_customer_code": code},  # Replace with your actual field name
-        fields=["name", "email_id", "mobile_no", "custom_debt" , "custom_debt_date" ,"custom_customer_code" ],
+        filters={"custom_customer_code": code},
+        fields=["name", "email_id", "mobile_no", "custom_debt", "custom_debt_date", "custom_customer_code", "default_price_list"],
         limit=1
     )
 
     if not customer:
-        user = frappe.get_all(
-            "User",
-            filters={"new_password":code},
-            limit = 1
-        )
-        if not user:
-            return {"error": "Customer or User not found"}
-        return{"user":user[0]}
+        return {"error": "Customer not found"}
 
     return {"customer": customer[0]}
 
 
+################################################################################
+##################  Get Invoices By Customer Code Function #####################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_invoices_by_customer_code(code=None, limit=20, offset=0):
@@ -194,11 +169,9 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0):
     if not code:
         return {"error": "Missing client code"}
 
-    # Conversion en int pour être sûr
     limit = int(limit) if limit else 20
     offset = int(offset) if offset else 0
 
-    # Step 1: Get customer
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
@@ -211,17 +184,15 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch Sales Invoices avec Pagination
     sales_invoices = frappe.get_all(
         "Sales Invoice",
         filters={"customer": customer_name},
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc",
-        limit=limit,   # Limite (ex: 20)
-        start=offset   # Début (ex: 0, 20, 40...)
+        limit=limit,
+        start=offset
     )
-    
-    # Step 3: Fetch POS Invoices avec Pagination
+
     pos_invoices = frappe.get_all(
         "POS Invoice",
         filters={"customer": customer_name, "docstatus": 1},
@@ -232,25 +203,24 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0):
     )
 
     return {
-        "customer_code": code,
+        "customer_code":  code,
         "sales_invoices": sales_invoices,
-        "pos_invoices": pos_invoices
+        "pos_invoices":   pos_invoices
     }
 
 
-
-
-
+################################################################################
+################  Get Notification By Customer Code Function ###################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_notification_by_customer_code(code=None):
     """
-    Public endpoint to get both Sales Invoices and POS Invoices by a customer's custom code.
+    Récupère les notifications mobiles d'un client par son code personnalisé.
     """
     if not code:
         return {"error": "Missing client code"}
 
-    # Step 1: Get customer by custom code
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
@@ -263,31 +233,29 @@ def get_notification_by_customer_code(code=None):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch all Notification filtered by customer and only committed docs (docstatus = 1)
     all_notification = frappe.get_all(
         "Mobile Notification",
         filters={
-            "customer": customer_name,
-            "docstatus": 1  # Only get committed documents
+            "customer":  customer_name,
+            "docstatus": 1
         },
         fields=["name", "msg", "title"],
     )
-    
 
     return {
         "notification": all_notification,
     }
 
 
-
-import frappe
+################################################################################
+################  Get Payments By Customer Code Function #######################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_payments_by_customer_code(code=None):
     if not code:
         return {"error": "Missing customer code"}
 
-    # Step 1: Get customer by custom code
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
@@ -299,13 +267,12 @@ def get_payments_by_customer_code(code=None):
 
     customer_name = customer[0].name
 
-    # Step 2: Fetch Payment Entries (submitted only)
     payments = frappe.get_all(
         "Payment Entry",
         filters={
             "party_type": "Customer",
-            "party": customer_name,
-            "docstatus": 1
+            "party":      customer_name,
+            "docstatus":  1
         },
         fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
         order_by="posting_date desc"
@@ -316,16 +283,15 @@ def get_payments_by_customer_code(code=None):
 
     pe_names = [p["name"] for p in payments]
 
-    # Step 3: Fetch referenced invoices for those Payment Entries
     refs = frappe.get_all(
         "Payment Entry Reference",
         filters={
-            "parent": ["in", pe_names],
-            "reference_doctype": "Sales Invoice"
+            "parent":             ["in", pe_names],
+            "reference_doctype":  "Sales Invoice"
         },
         fields=[
-            "parent",               # Payment Entry name
-            "reference_name",       # Sales Invoice name
+            "parent",
+            "reference_name",
             "allocated_amount",
             "total_amount",
             "outstanding_amount"
@@ -333,7 +299,6 @@ def get_payments_by_customer_code(code=None):
         order_by="parent desc"
     )
 
-    # Step 4: (optional but useful) Get invoice extra info (status, grand_total, outstanding)
     invoice_names = list({r["reference_name"] for r in refs})
     invoice_map = {}
     if invoice_names:
@@ -344,108 +309,85 @@ def get_payments_by_customer_code(code=None):
         )
         invoice_map = {inv["name"]: inv for inv in invoices}
 
-    # Group references by payment entry
     refs_by_payment = {}
     for r in refs:
         inv = invoice_map.get(r["reference_name"], {})
         refs_by_payment.setdefault(r["parent"], []).append({
-            "invoice": r["reference_name"],
-            "allocated_amount": r.get("allocated_amount"),
+            "invoice":              r["reference_name"],
+            "allocated_amount":     r.get("allocated_amount"),
             "invoice_posting_date": inv.get("posting_date"),
-            "invoice_status": inv.get("status"),
-            "invoice_total": inv.get("grand_total"),
-            "invoice_outstanding": inv.get("outstanding_amount"),
+            "invoice_status":       inv.get("status"),
+            "invoice_total":        inv.get("grand_total"),
+            "invoice_outstanding":  inv.get("outstanding_amount"),
         })
 
-    # Attach invoices list to each payment
     for p in payments:
         p["invoices_payed"] = refs_by_payment.get(p["name"], [])
 
     return {"payments": payments}
 
 
-
-
-
-
-
+################################################################################
+######################  Get Single Invoice Details Function ####################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_single_invoice_details(invoice_name=None):
-    
-    try:
 
+    try:
         if not invoice_name:
             return {"error": "Missing invoice name"}
-    
+
         invoice_type = "Sales Invoice"
         if not frappe.db.exists(invoice_type, invoice_name):
-         
             invoice_type = "POS Invoice"
             if not frappe.db.exists(invoice_type, invoice_name):
                 return {"error": "Invoice not found"}
-        
-        frappe.log_error(f"Found invoice type: {invoice_type}", "Invoice Detail Debug")
-      
         doc = frappe.get_doc(invoice_type, invoice_name)
-        
-      
+
         items = []
         for item in doc.items:
             items.append({
                 "item_code": item.item_code or "",
-                "qty": float(item.qty or 0),
-                "rate": float(item.rate or 0),
-                "amount": float(item.amount or 0),
+                "qty":       float(item.qty or 0),
+                "rate":      float(item.rate or 0),
+                "amount":    float(item.amount or 0),
             })
-        
- 
+
         response = {
             "invoice": {
-                "name": doc.name,
-                "posting_date": str(doc.posting_date or ""),
-                "grand_total": float(doc.grand_total or 0),
+                "name":               doc.name,
+                "posting_date":       str(doc.posting_date or ""),
+                "grand_total":        float(doc.grand_total or 0),
                 "outstanding_amount": float(doc.outstanding_amount or 0),
-                "status": doc.status or "",
-                "total_qty": len(items),
+                "status":             doc.status or "",
+                "total_qty":          sum(float(i["qty"]) for i in items),
             },
             "items": items,
         }
         return response
-        
-    except Exception as e:
-        error_message = f"Error in get_single_invoice_details: {str(e)}"
-        frappe.log_error(error_message, "Invoice Detail Error")
-        frappe.log_error(frappe.get_traceback(), "Invoice Detail Traceback")
-        return {"error": str(e)}
-    
-    
 
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Invoice Detail Error")
+        return {"error": str(e)}
+
+
+################################################################################
+######################  Manage Stock Entry Function ############################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def manage_stock_entry(name=None, items=None, action="save", token=None):
+def manage_stock_entry(name=None, items=None, action="save"):
 
     try:
-        frappe.log_error("=== manage_stock_entry called ===", "Stock Entry Debug")
-
-        if not token:
-            token = frappe.form_dict.get("token")
-
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
-
             if "application/json" in content_type:
                 data = json.loads(frappe.request.data or "{}")
-                name = name or data.get("name")
-                items = items or data.get("items")
+                name   = name   or data.get("name")
+                items  = items  or data.get("items")
                 action = data.get("action", action)
-                token = token or data.get("token")
 
-
-        if not token:
-            return {"error": "Authentication required - no token"}
-
-   
         if not name or not items:
             return {"error": "Missing parameters: name or items"}
 
@@ -460,7 +402,6 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
         if isinstance(items, str):
             items = json.loads(items)
 
-    
         existing_items = {row.item_code: row for row in doc.items}
 
         for it in items:
@@ -479,11 +420,10 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
                 row.qty = qty
                 row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
                 row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
-
             else:
                 doc.append("items", {
-                    "item_code": item_code,
-                    "qty": qty,
+                    "item_code":   item_code,
+                    "qty":         qty,
                     "s_warehouse": it.get("fromWarehouse"),
                     "t_warehouse": it.get("toWarehouse"),
                 })
@@ -491,18 +431,17 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
- 
         if action == "approve":
             doc.submit()
             frappe.db.commit()
             return {
                 "message": "Success",
-                "detail": f"Stock Entry {name} approved successfully"
+                "detail":  f"Stock Entry {name} approved successfully"
             }
 
         return {
             "message": "Success",
-            "detail": f"Stock Entry {name} saved successfully"
+            "detail":  f"Stock Entry {name} saved successfully"
         }
 
     except Exception as e:
@@ -510,8 +449,12 @@ def manage_stock_entry(name=None, items=None, action="save", token=None):
         return {"error": str(e)}
 
 
+################################################################################
+############################  Search Items Function ############################
+################################################################################
+
 @frappe.whitelist(allow_guest=True)
-def search_items(token=None, search_text=None):
+def search_items(search_text=None):
     if not search_text:
         return []
 
@@ -522,42 +465,53 @@ def search_items(token=None, search_text=None):
             "item_code": ["like", f"%{search_text}%"],
             "item_name": ["like", f"%{search_text}%"]
         },
-        fields=["item_code"],
+        fields=["item_code", "item_name"],
         limit=10
     )
-    
-    return items  
-    
 
+    for item in items:
+        price = frappe.db.get_value(
+            "Item Price",
+            {"item_code": item.item_code, "price_list": "Standard Selling"},
+            "price_list_rate"
+        )
+        item["standard_rate"] = flt(price) if price else 0.0
+
+    return items
+
+
+################################################################################
+################  Get Announcements By Customer Code Function ##################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def get_announcements_by_customer_code(code=None):
+def get_announcements_by_customer_code(code=None, limit=10, offset=0):
     if not code:
         return {"error": "Missing client code"}
 
+    limit        = int(limit)
+    offset       = int(offset)
     current_date = frappe.utils.today()
 
     customer_name = frappe.db.get_value("Customer", {"custom_customer_code": code}, "name")
-    
     if not customer_name:
         return {"error": "Customer not found"}
 
-    
-    announcements = frappe.get_all(
+    all_announcements = frappe.get_all(
         "Annonce mobile",
         filters=[
-            ["docstatus", "=", 1],
-            ["publish_date", "<=", current_date],
-            ["expiry_date", ">=", current_date]
+            ["docstatus",     "=",  1],
+            ["publish_date",  "<=", current_date],
+            ["expiry_date",   ">=", current_date]
         ],
         fields=["name", "title", "announcement_typ", "priority", "color", "description", "banner_image", "publish_date"],
+        order_by="publish_date desc",
         ignore_permissions=True
     )
 
-    final_announcements = []
+    valid_announcements = []
 
-    for ann in announcements:
-        
+    for ann in all_announcements:
         doc = frappe.get_doc("Annonce mobile", ann.name, ignore_permissions=True)
 
         is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
@@ -565,33 +519,163 @@ def get_announcements_by_customer_code(code=None):
             continue
 
         allowed_list = doc.get("allowed", [])
-        is_allowed = True
-        
-        if allowed_list:
-            is_allowed = any(row.customer == customer_name for row in allowed_list)
+        is_allowed = not allowed_list or any(row.customer == customer_name for row in allowed_list)
 
         if is_allowed:
-            
-            final_announcements.append({
-                "id": ann.name,
-                "title": ann.title,
-                "subtitle": ann.description or "",     
-                "type": ann.announcement_typ or "Info",  
-                "priority": ann.priority or "Medium",
-                "icon": "campaign",                      
-                "color": ann.color or "#00A89C",
+            valid_announcements.append({
+                "id":         ann.name,
+                "title":      ann.title,
+                "subtitle":   ann.description or "",
+                "type":       ann.announcement_typ or "Info",
+                "priority":   ann.priority or "Medium",
+                "color":      ann.color or "#00A89C",
                 "postedTime": str(ann.publish_date or ""),
-                "isNew": 1,                            
-                "image": ann.banner_image,
-                "actionLabel": "Voir plus",
-                "actionRoute": None
+                "image":      ann.banner_image,
             })
-            return {
-        "customer": customer_name,
-        "count": len(final_announcements),
-        "announcements": final_announcements
+
+    paginated_list = valid_announcements[offset: offset + limit]
+
+    return {
+        "customer":    customer_name,
+        "total_count": len(valid_announcements),
+        "announcements": paginated_list
     }
 
+
+################################################################################
+######################  Create Sales Order Function ############################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def create_sales_order():
+    try:
+        data = None
+
+        if frappe.request:
+            content_type = frappe.request.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                raw = frappe.request.data
+                if raw:
+                    data = json.loads(raw)
+
+        if not data:
+            data = frappe.form_dict
+
+        code_envoye = data.get("customer_code")
+        items       = data.get("items")
+
+        if not code_envoye:
+            return {"status": "error", "message": "customer_code manquant"}
+
+        if not items:
+            return {"status": "error", "message": "items manquants"}
+
+        if isinstance(items, str):
+            items = json.loads(items)
+
+        customer_id = frappe.db.get_value("Customer", {"custom_customer_code": code_envoye}, "name")
+        if not customer_id:
+            return {"status": "error", "message": f"Client '{code_envoye}' introuvable dans ERPNext"}
+
+        company    = "OPTILENS ALGER"
+        default_wh = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
+
+        so = frappe.get_doc({
+            "doctype":          "Sales Order",
+            "customer":         customer_id,
+            "company":          company,
+            "transaction_date": frappe.utils.today(),
+            "delivery_date":    frappe.utils.add_days(frappe.utils.today(), 2),
+            "items":            []
+        })
+
+        for it in items:
+            item_code = it.get("item_code")
+            if not item_code:
+                continue
+
+            uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+
+            so.append("items", {
+                "item_code":     item_code,
+                "qty":           float(it.get("qty") or 1),
+                "rate":          float(it.get("rate") or 0),
+                "uom":           uom,
+                "warehouse":     default_wh or "Magasins - OA",
+                "delivery_date": so.delivery_date
+            })
+
+        so.insert(ignore_permissions=True)
+        so.submit()
+        frappe.db.commit()
+
+        return {"status": "success", "order_id": so.name}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Erreur Commande Mobile")
+        return {"status": "error", "message": str(e)}
+
+
+################################################################################
+######################  Get Customer Orders Function ###########################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def get_customer_orders(customer_code):
+    if not customer_code:
+        return {"status": "error", "message": "customer_code manquant"}
+
+    customer_id = frappe.db.get_value("Customer", {"custom_customer_code": customer_code}, "name")
+
+    if not customer_id:
+        return {"status": "error", "message": f"Client '{customer_code}' introuvable"}
+
+    orders = frappe.get_all(
+        "Sales Order",
+        filters={"customer": customer_id},
+        fields=["name", "transaction_date", "status", "grand_total"],
+        order_by="creation desc"
+    )
+    return {"status": "success", "orders": orders}
+
+
+################################################################################
+######################  Get Order Details Function #############################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def get_order_details(order_id=None):
+    if not order_id:
+        order_id = frappe.form_dict.get('order_id')
+
+    if not order_id:
+        return {"status": "error", "message": "ID de commande manquant"}
+
+    try:
+        doc = frappe.get_doc("Sales Order", order_id, ignore_permissions=True)
+
+        items_list = []
+        for item in doc.items:
+            items_list.append({
+                "item_code": item.item_code,
+                "qty":       item.qty,
+                "rate":      item.rate,
+                "amount":    item.amount
+            })
+
+        return {
+            "status":      "success",
+            "name":        doc.name,
+            "grand_total": doc.grand_total,
+            "items":       items_list
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Commande introuvable : {str(e)}"}
+
+
+################################################################################
+######################  Create Customer Complaint Function #####################
+################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def create_customer_complaint():
@@ -601,22 +685,22 @@ def create_customer_complaint():
             return {"error": "Method not allowed"}
 
         data = json.loads(frappe.request.data)
-        
+
         doc = frappe.get_doc({
-            "doctype": "reclamtion client",
-            "client": data.get("client"),
-            "date_reception": data.get("date_reception") or frappe.utils.today(),
-            "desciption_reclamation": data.get("description"),
-            "docstatus": 0  # Reste en brouillon (Draft)
-        })
         
+            "doctype":                 "reclamtion client",
+            "client":                  data.get("client"),
+            "date_reception":          data.get("date_reception") or frappe.utils.today(),
+            "documents_référence":     data.get("reference"),
+            "desciption_reclamation":  data.get("description"),
+            "docstatus":               0
+        })
+
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
-        
+
         return {"message": "Success", "id": doc.name}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
         return {"error": str(e)}
-
-    

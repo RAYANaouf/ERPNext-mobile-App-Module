@@ -1,5 +1,47 @@
 [
  {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-04-10 18:38:06.178608",
+  "name": "5nds90ae7u",
+  "permitted_roles": [
+   {
+    "parent": "5nds90ae7u",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2026-00003",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-04-10 18:39:27.205983",
+  "name": "6gocm4k9aa",
+  "permitted_roles": [
+   {
+    "parent": "6gocm4k9aa",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2026-00004",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
   "completed_by": "Administrator",
   "completed_by_role": "All",
   "docstatus": 0,
