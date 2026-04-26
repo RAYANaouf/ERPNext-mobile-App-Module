@@ -589,8 +589,14 @@ def get_items_by_customer_code(customer_code):
                         "price_list": "Public - Alger",
                         "selling": 1
                     },
+
                     "price_list_rate"
                 ) or 0.0
+
+            frappe.log_error(f"price_list: {price_list}", "Debug Items")
+            frappe.log_error(f"items count: {len(items)}", "Debug Items")
+            if items and item == items[0]:
+                frappe.log_error(f"first item rate: {rate}", "Debug Items")
 
             result.append({
                 "item_code": item["item_code"],
