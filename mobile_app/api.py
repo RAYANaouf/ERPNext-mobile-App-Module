@@ -543,6 +543,78 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
 
 
 ################################################################################
+######################  Get Items By Customer Code Function ####################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def get_items_by_customer_code(customer_code):
+    try:
+        if not customer_code:
+            return {"status": "error", "message": "customer_code manquant"}
+
+        # Get customer price list
+        price_list = frappe.db.get_value(
+            "Customer",
+            {"custom_customer_code": customer_code},
+            "default_price_list"
+        ) or "Public - Alger"
+
+        # Get all active items
+        items = frappe.get_all(
+            "Item",
+            filters={"disabled": 0, "is_sales_item": 1},
+            fields=["item_code", "item_name", "description", 
+                   "item_group", "stock_uom"]
+        )
+
+        result = []
+        for item in items:
+            # Fetch price from customer price list
+            rate = frappe.db.get_value(
+                "Item Price",
+                {
+                    "item_code": item["item_code"],
+                    "price_list": price_list,
+                    "selling": 1
+                },
+                "price_list_rate"
+            )
+
+            # If no price in customer list, try Public - Alger
+            if not rate:
+                rate = frappe.db.get_value(
+                    "Item Price",
+                    {
+                        "item_code": item["item_code"],
+                        "price_list": "Public - Alger",
+                        "selling": 1
+                    },
+                    "price_list_rate"
+                ) or 0.0
+
+            result.append({
+                "item_code": item["item_code"],
+                "item_name": item["item_name"],
+                "description": item.get("description", ""),
+                "item_group": item.get("item_group", ""),
+                "uom": item.get("stock_uom", "Nos"),
+                "rate": float(rate),
+                "currency": "DZD",
+                "price_list": price_list
+            })
+
+        return {
+            "status": "success",
+            "price_list": price_list,
+            "items": result
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Erreur get_items")
+        return {"status": "error", "message": str(e)}
+
+
+################################################################################
 ######################  Create Sales Order Function ############################
 ################################################################################
 
@@ -577,6 +649,14 @@ def create_sales_order():
         if not customer_id:
             return {"status": "error", "message": f"Client '{code_envoye}' introuvable dans ERPNext"}
 
+        customer_data = frappe.db.get_value(
+            "Customer",
+            customer_id,
+            "default_price_list",
+            as_dict=True
+        )
+        price_list = (customer_data.get("default_price_list") if customer_data else None) or "Public - Alger"
+
         company    = "OPTILENS ALGER"
         default_wh = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
 
@@ -594,12 +674,22 @@ def create_sales_order():
             if not item_code:
                 continue
 
+            rate = frappe.db.get_value(
+                "Item Price",
+                {
+                    "item_code": item_code,
+                    "price_list": price_list,
+                    "selling": 1
+                },
+                "price_list_rate"
+            ) or 0.0
+
             uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
 
             so.append("items", {
                 "item_code":     item_code,
                 "qty":           float(it.get("qty") or 1),
-                "rate":          float(it.get("rate") or 0),
+                "rate":          float(rate),
                 "uom":           uom,
                 "warehouse":     default_wh or "Magasins - OA",
                 "delivery_date": so.delivery_date
