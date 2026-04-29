@@ -454,13 +454,13 @@ def manage_stock_entry(name=None, items=None, action="save"):
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def search_items(search_text=None):
+def search_items(search_text=None, customer_code=None):
     if not search_text:
         return []
 
     items = frappe.get_all(
         "Item",
-        filters={"disabled": 0},
+        filters={"disabled": 0, "is_sales_item": 1},
         or_filters={
             "item_code": ["like", f"%{search_text}%"],
             "item_name": ["like", f"%{search_text}%"]
@@ -469,16 +469,41 @@ def search_items(search_text=None):
         limit=10
     )
 
+
+    price_list = "Public - Alger"  
+    if customer_code:
+        customer_price_list = frappe.db.get_value(
+            "Customer",
+            {"custom_customer_code": customer_code},
+            "default_price_list"
+        )
+        if customer_price_list:
+            price_list = customer_price_list
+
     for item in items:
         price = frappe.db.get_value(
             "Item Price",
-            {"item_code": item.item_code, "price_list": "Standard Selling"},
+            {
+                "item_code": item.item_code,
+                "price_list": price_list,
+                "selling": 1
+            },
             "price_list_rate"
         )
+        if not price:
+            price = frappe.db.get_value(
+                "Item Price",
+                {
+                    "item_code": item.item_code,
+                    "price_list": "Public - Alger",
+                    "selling": 1
+                },
+                "price_list_rate"
+            )
+
         item["standard_rate"] = flt(price) if price else 0.0
 
     return items
-
 
 ################################################################################
 ################  Get Announcements By Customer Code Function ##################
