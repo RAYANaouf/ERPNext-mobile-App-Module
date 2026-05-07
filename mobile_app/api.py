@@ -252,9 +252,12 @@ def get_notification_by_customer_code(code=None):
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def get_payments_by_customer_code(code=None):
+def get_payments_by_customer_code(code=None,limit=20, offset=0):
     if not code:
         return {"error": "Missing customer code"}
+    
+    limit = int(limit) if limit else 20
+    offset = int(offset) if offset else 0
 
     customer = frappe.get_all(
         "Customer",
@@ -275,7 +278,9 @@ def get_payments_by_customer_code(code=None):
             "docstatus":  1
         },
         fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
-        order_by="posting_date desc"
+        order_by="posting_date desc",
+        limit=limit, 
+        start=offset  
     )
 
     if not payments:
