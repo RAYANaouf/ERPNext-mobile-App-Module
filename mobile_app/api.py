@@ -460,9 +460,18 @@ def manage_stock_entry(name=None, items=None, action="save"):
 
 @frappe.whitelist(allow_guest=True)
 def search_items(search_text=None, customer_code=None):
+ 
     if not search_text:
         return []
-
+ 
+    search_text = str(search_text).strip()
+ 
+    if len(search_text) > 50:
+        return {"status": "error", "message": "Recherche trop longue (max 50 caractères)"}
+ 
+    if not re.match(r'^[\w\s\-\.+]+$', search_text, re.UNICODE):
+        return {"status": "error", "message": "Caractères non autorisés dans la recherche"}
+ 
     items = frappe.get_all(
         "Item",
         filters={"disabled": 0, "is_sales_item": 1},
@@ -473,9 +482,11 @@ def search_items(search_text=None, customer_code=None):
         fields=["item_code", "item_name"],
         limit=10
     )
-
-
-    price_list = "Public - Alger"  
+ 
+    if not items:
+        return []
+ 
+    price_list = "Public - Alger"
     if customer_code:
         customer_price_list = frappe.db.get_value(
             "Customer",
@@ -484,30 +495,38 @@ def search_items(search_text=None, customer_code=None):
         )
         if customer_price_list:
             price_list = customer_price_list
-
-    for item in items:
-        price = frappe.db.get_value(
+ 
+    item_codes = [item["item_code"] for item in items]
+ 
+    prices_raw = frappe.get_all(
+        "Item Price",
+        filters={
+            "item_code": ["in", item_codes],
+            "price_list": price_list,
+            "selling": 1
+        },
+        fields=["item_code", "price_list_rate"]
+    )
+    price_map = {p["item_code"]: p["price_list_rate"] for p in prices_raw}
+ 
+    fallback_map = {}
+    if price_list != "Public - Alger":
+        fallback_raw = frappe.get_all(
             "Item Price",
-            {
-                "item_code": item.item_code,
-                "price_list": price_list,
+            filters={
+                "item_code": ["in", item_codes],
+                "price_list": "Public - Alger",
                 "selling": 1
             },
-            "price_list_rate"
+            fields=["item_code", "price_list_rate"]
         )
-        if not price:
-            price = frappe.db.get_value(
-                "Item Price",
-                {
-                    "item_code": item.item_code,
-                    "price_list": "Public - Alger",
-                    "selling": 1
-                },
-                "price_list_rate"
-            )
-
-        item["standard_rate"] = flt(price) if price else 0.0
-
+        fallback_map = {p["item_code"]: p["price_list_rate"] for p in fallback_raw}
+ 
+    for item in items:
+        code = item["item_code"]
+        rate = price_map.get(code) or fallback_map.get(code)
+        item["standard_rate"] = flt(rate) if rate else 0.0
+ 
     return items
 
 ################################################################################
@@ -581,74 +600,75 @@ def get_items_by_customer_code(customer_code):
     try:
         if not customer_code:
             return {"status": "error", "message": "customer_code manquant"}
-
-        # Get customer price list
+ 
         price_list = frappe.db.get_value(
             "Customer",
             {"custom_customer_code": customer_code},
             "default_price_list"
         ) or "Public - Alger"
-
-        # Get all active items
+ 
         items = frappe.get_all(
             "Item",
             filters={"disabled": 0, "is_sales_item": 1},
-            fields=["item_code", "item_name", "description", 
-                   "item_group", "stock_uom"]
+            fields=["item_code", "item_name", "description",
+                    "item_group", "stock_uom"]
         )
-
-        result = []
-        for item in items:
-            # Fetch price from customer price list
-            rate = frappe.db.get_value(
+ 
+        if not items:
+            return {"status": "success", "price_list": price_list, "items": []}
+ 
+        item_codes = [item["item_code"] for item in items]
+ 
+        customer_prices_raw = frappe.get_all(
+            "Item Price",
+            filters={
+                "item_code": ["in", item_codes],
+                "price_list": price_list,
+                "selling": 1
+            },
+            fields=["item_code", "price_list_rate"]
+        )
+        customer_price_map = {p["item_code"]: p["price_list_rate"] for p in customer_prices_raw}
+ 
+        fallback_price_map = {}
+        if price_list != "Public - Alger":
+            fallback_prices_raw = frappe.get_all(
                 "Item Price",
-                {
-                    "item_code": item["item_code"],
-                    "price_list": price_list,
+                filters={
+                    "item_code": ["in", item_codes],
+                    "price_list": "Public - Alger",
                     "selling": 1
                 },
-                "price_list_rate"
+                fields=["item_code", "price_list_rate"]
             )
-
-            # If no price in customer list, try Public - Alger
-            if not rate:
-                rate = frappe.db.get_value(
-                    "Item Price",
-                    {
-                        "item_code": item["item_code"],
-                        "price_list": "Public - Alger",
-                        "selling": 1
-                    },
-
-                    "price_list_rate"
-                ) or 0.0
-
-            frappe.log_error(f"price_list: {price_list}", "Debug Items")
-            frappe.log_error(f"items count: {len(items)}", "Debug Items")
-            if items and item == items[0]:
-                frappe.log_error(f"first item rate: {rate}", "Debug Items")
-
+            fallback_price_map = {p["item_code"]: p["price_list_rate"] for p in fallback_prices_raw}
+ 
+        result = []
+        for item in items:
+            code = item["item_code"]
+ 
+            rate = customer_price_map.get(code) or fallback_price_map.get(code) or 0.0
+ 
             result.append({
-                "item_code": item["item_code"],
-                "item_name": item["item_name"],
-                "description": item.get("description", ""),
-                "item_group": item.get("item_group", ""),
-                "uom": item.get("stock_uom", "Nos"),
-                "rate": float(rate),
-                "currency": "DZD",
-                "price_list": price_list
+                "item_code":   code,
+                "item_name":   item["item_name"],
+                "description": item.get("description") or "",
+                "item_group":  item.get("item_group") or "",
+                "uom":         item.get("stock_uom") or "Nos",
+                "rate":        float(rate),
+                "currency":    "DZD",
+                "price_list":  price_list
             })
-
+ 
         return {
-            "status": "success",
+            "status":     "success",
             "price_list": price_list,
-            "items": result
+            "items":      result
         }
-
+ 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Erreur get_items")
         return {"status": "error", "message": str(e)}
-
 
 ################################################################################
 ######################  Create Sales Order Function ############################

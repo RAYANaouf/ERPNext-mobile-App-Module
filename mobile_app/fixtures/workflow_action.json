@@ -4,6 +4,27 @@
   "completed_by_role": null,
   "docstatus": 0,
   "doctype": "Workflow Action",
+  "modified": "2026-05-06 19:37:12.076971",
+  "name": "prgog4oqh3",
+  "permitted_roles": [
+   {
+    "parent": "prgog4oqh3",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2026-00005",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
   "modified": "2026-04-29 17:54:57.469603",
   "name": "bmegp4df90",
   "permitted_roles": [
@@ -520,48 +541,6 @@
   "completed_by_role": "All",
   "docstatus": 0,
   "doctype": "Workflow Action",
-  "modified": "2026-02-03 00:19:32.921272",
-  "name": "qhhi67aa6r",
-  "permitted_roles": [
-   {
-    "parent": "qhhi67aa6r",
-    "parentfield": "permitted_roles",
-    "parenttype": "Workflow Action",
-    "role": "All"
-   }
-  ],
-  "reference_doctype": "Checking The Invoice",
-  "reference_name": "FS-VEN-2026-00025",
-  "status": "Completed",
-  "user": null,
-  "workflow_state": "Draft"
- },
- {
-  "completed_by": null,
-  "completed_by_role": null,
-  "docstatus": 0,
-  "doctype": "Workflow Action",
-  "modified": "2026-02-03 00:19:38.678512",
-  "name": "qjaf81bfuq",
-  "permitted_roles": [
-   {
-    "parent": "qjaf81bfuq",
-    "parentfield": "permitted_roles",
-    "parenttype": "Workflow Action",
-    "role": "All"
-   }
-  ],
-  "reference_doctype": "Checking The Invoice",
-  "reference_name": "FS-VEN-2026-00025",
-  "status": "Open",
-  "user": null,
-  "workflow_state": "Pending"
- },
- {
-  "completed_by": "Administrator",
-  "completed_by_role": "All",
-  "docstatus": 0,
-  "doctype": "Workflow Action",
   "modified": "2025-12-19 01:11:22.489058",
   "name": "sd9vs839m6",
   "permitted_roles": [
@@ -1057,48 +1036,6 @@
   ],
   "reference_doctype": "Checking The Invoice",
   "reference_name": "FS-VEN-2026-00026",
-  "status": "Open",
-  "user": null,
-  "workflow_state": "Pending"
- },
- {
-  "completed_by": "Administrator",
-  "completed_by_role": "All",
-  "docstatus": 0,
-  "doctype": "Workflow Action",
-  "modified": "2026-02-03 00:52:00.315764",
-  "name": "di3icmjnsp",
-  "permitted_roles": [
-   {
-    "parent": "di3icmjnsp",
-    "parentfield": "permitted_roles",
-    "parenttype": "Workflow Action",
-    "role": "All"
-   }
-  ],
-  "reference_doctype": "Checking The Invoice",
-  "reference_name": "FS-VEN-2026-00027",
-  "status": "Completed",
-  "user": null,
-  "workflow_state": "Draft"
- },
- {
-  "completed_by": null,
-  "completed_by_role": null,
-  "docstatus": 0,
-  "doctype": "Workflow Action",
-  "modified": "2026-02-03 00:52:04.178913",
-  "name": "dj9703et52",
-  "permitted_roles": [
-   {
-    "parent": "dj9703et52",
-    "parentfield": "permitted_roles",
-    "parenttype": "Workflow Action",
-    "role": "All"
-   }
-  ],
-  "reference_doctype": "Checking The Invoice",
-  "reference_name": "FS-VEN-2026-00027",
   "status": "Open",
   "user": null,
   "workflow_state": "Pending"
@@ -2275,6 +2212,27 @@
   ],
   "reference_doctype": "Stock Entry",
   "reference_name": "MAT-STE-2026-00002",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Pending"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
+  "modified": "2026-05-09 16:31:25.850515",
+  "name": "g8aco20rro",
+  "permitted_roles": [
+   {
+    "parent": "g8aco20rro",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Stock Entry",
+  "reference_name": "MAT-STE-2026-00006",
   "status": "Open",
   "user": null,
   "workflow_state": "Pending"
