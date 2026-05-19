@@ -53,25 +53,32 @@ def login(email: str, password: str):
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0):
-    limit = int(limit or 20)
+def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0, search_text=None, status=None):
+    limit  = int(limit  or 20)
     offset = int(offset or 0)
+
     allowed_docstatus = [0, 1]
+
+    # ── Filtres de base ──────────────────────────────────────────────────────
+    filters = {"docstatus": ["in", allowed_docstatus]}
+
+    # ── Filtre search_text (optionnel) ───────────────────────────────────────
+    is_search = bool(search_text and str(search_text).strip())
+    if is_search:
+        filters["name"] = ["like", f"%{str(search_text).strip()}%"]
+
+    # ── Filtre status (optionnel) ────────────────────────────────────────────
+    if status and status != "All":
+        filters["workflow_state"] = status
 
     rows = frappe.get_all(
         "Stock Entry",
-        fields=[
-            "name",
-            "posting_date",
-            "from_warehouse",
-            "to_warehouse",
-            "workflow_state",
-            "docstatus",
-        ],
-        filters={"docstatus": ["in", allowed_docstatus]},
+        fields=["name", "posting_date", "from_warehouse",
+                "to_warehouse", "workflow_state", "docstatus"],
+        filters=filters,
         order_by="posting_date desc",
-        limit=limit,
-        start=offset
+        limit=20  if is_search else limit,
+        start=0   if is_search else offset
     )
 
     out = []
@@ -81,11 +88,11 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0):
             "posting_date": str(r.get("posting_date") or ""),
             "from":         r.get("from_warehouse") or "",
             "to":           r.get("to_warehouse") or "",
-            "status":       (r.get("workflow_state") or ("Submitted" if r.get("docstatus") == 1 else "Draft")),
+            "status":       r.get("workflow_state") or (
+                            "Submitted" if r.get("docstatus") == 1 else "Draft"),
         })
 
-    return out
-
+    return {"stock_entries": out, "is_search": is_search}
 
 ################################################################################
 ##################  Get Stock Entry Details Function ###########################
@@ -163,14 +170,11 @@ def get_client_by_code(code=None):
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def get_invoices_by_customer_code(code=None, limit=20, offset=0):
-    """
-    Récupère les factures avec pagination.
-    """
+def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=None, status=None):
     if not code:
         return {"error": "Missing client code"}
 
-    limit = int(limit) if limit else 20
+    limit  = int(limit)  if limit  else 20
     offset = int(offset) if offset else 0
 
     customer = frappe.get_all(
@@ -179,37 +183,53 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0):
         fields=["name"],
         limit=1
     )
-
     if not customer:
         return {"error": "Customer not found"}
 
     customer_name = customer[0].name
 
+    # ── Filtres de base ──────────────────────────────────────────────────────
+    filters_sales = {"customer": customer_name}
+    filters_pos   = {"customer": customer_name, "docstatus": 1}
+
+    # ── Filtre search_text (optionnel) ───────────────────────────────────────
+    if search_text and str(search_text).strip():
+        q = str(search_text).strip()
+        filters_sales["name"] = ["like", f"%{q}%"]
+        filters_pos["name"]   = ["like", f"%{q}%"]
+
+    # ── Filtre status (optionnel) ────────────────────────────────────────────
+    if status and status != "All":
+        filters_sales["status"] = status
+        filters_pos["status"]   = status
+
+    # ── Pas de pagination si recherche active ────────────────────────────────
+    is_search = bool(search_text and str(search_text).strip())
+
     sales_invoices = frappe.get_all(
         "Sales Invoice",
-        filters={"customer": customer_name},
+        filters=filters_sales,
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc",
-        limit=limit,
-        start=offset
+        limit=20      if is_search else limit,
+        start=0       if is_search else offset
     )
 
     pos_invoices = frappe.get_all(
         "POS Invoice",
-        filters={"customer": customer_name, "docstatus": 1},
+        filters=filters_pos,
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc",
-        limit=limit,
-        start=offset
+        limit=20      if is_search else limit,
+        start=0       if is_search else offset
     )
 
     return {
         "customer_code":  code,
+        "is_search":      is_search,        
         "sales_invoices": sales_invoices,
         "pos_invoices":   pos_invoices
     }
-
-
 ################################################################################
 ################  Get Notification By Customer Code Function ###################
 ################################################################################
@@ -253,11 +273,11 @@ def get_notification_by_customer_code(code=None):
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
-def get_payments_by_customer_code(code=None,limit=20, offset=0):
+def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=None):
     if not code:
         return {"error": "Missing customer code"}
-    
-    limit = int(limit) if limit else 20
+
+    limit  = int(limit)  if limit  else 20
     offset = int(offset) if offset else 0
 
     customer = frappe.get_all(
@@ -271,37 +291,40 @@ def get_payments_by_customer_code(code=None,limit=20, offset=0):
 
     customer_name = customer[0].name
 
+    # ── Filtres de base ──────────────────────────────────────────────────────
+    filters = {
+        "party_type": "Customer",
+        "party":      customer_name,
+        "docstatus":  1
+    }
+
+    # ── Filtre search_text (optionnel) ───────────────────────────────────────
+    is_search = bool(search_text and str(search_text).strip())
+    if is_search:
+        filters["name"] = ["like", f"%{str(search_text).strip()}%"]
+
     payments = frappe.get_all(
         "Payment Entry",
-        filters={
-            "party_type": "Customer",
-            "party":      customer_name,
-            "docstatus":  1
-        },
+        filters=filters,
         fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
         order_by="posting_date desc",
-        limit=limit, 
-        start=offset  
+        limit=20  if is_search else limit,
+        start=0   if is_search else offset
     )
 
     if not payments:
-        return {"payments": []}
+        return {"payments": [], "is_search": is_search}
 
     pe_names = [p["name"] for p in payments]
 
     refs = frappe.get_all(
         "Payment Entry Reference",
         filters={
-            "parent":             ["in", pe_names],
-            "reference_doctype":  "Sales Invoice"
+            "parent":            ["in", pe_names],
+            "reference_doctype": "Sales Invoice"
         },
-        fields=[
-            "parent",
-            "reference_name",
-            "allocated_amount",
-            "total_amount",
-            "outstanding_amount"
-        ],
+        fields=["parent", "reference_name", "allocated_amount",
+                "total_amount", "outstanding_amount"],
         order_by="parent desc"
     )
 
@@ -330,7 +353,7 @@ def get_payments_by_customer_code(code=None,limit=20, offset=0):
     for p in payments:
         p["invoices_payed"] = refs_by_payment.get(p["name"], [])
 
-    return {"payments": payments}
+    return {"payments": payments, "is_search": is_search}
 
 
 ################################################################################
