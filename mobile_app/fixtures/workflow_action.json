@@ -4,6 +4,27 @@
   "completed_by_role": null,
   "docstatus": 0,
   "doctype": "Workflow Action",
+  "modified": "2026-05-16 13:26:36.097040",
+  "name": "m6p3bjah6d",
+  "permitted_roles": [
+   {
+    "parent": "m6p3bjah6d",
+    "parentfield": "permitted_roles",
+    "parenttype": "Workflow Action",
+    "role": "All"
+   }
+  ],
+  "reference_doctype": "Checking The Invoice",
+  "reference_name": "FS-VEN-2026-00028",
+  "status": "Open",
+  "user": null,
+  "workflow_state": "Approved"
+ },
+ {
+  "completed_by": null,
+  "completed_by_role": null,
+  "docstatus": 0,
+  "doctype": "Workflow Action",
   "modified": "2026-05-06 19:37:12.076971",
   "name": "prgog4oqh3",
   "permitted_roles": [
