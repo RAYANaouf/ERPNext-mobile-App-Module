@@ -874,3 +874,52 @@ def create_customer_complaint():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
         return {"error": str(e)}
+    
+################################################################################
+######################  Change Customer Code Function ##########################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def change_customer_code(old_code=None, new_code=None):
+    if not old_code or not new_code:
+        return {"success": False, "error": "Missing old_code or new_code"}
+
+    old_code = str(old_code).strip()
+    new_code = str(new_code).strip()
+
+    customer = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": old_code},
+        fields=["name", "customer_name", "custom_customer_code"],
+        limit=1
+    )
+    if not customer:
+        return {"success": False, "error": "Customer not found"}
+
+    existing = frappe.get_all(
+        "Customer",
+        filters={"custom_customer_code": new_code},
+        fields=["name"],
+        limit=1
+    )
+    if existing:
+        return {"success": False, "error": "New code already used by another customer"}
+
+    try:
+        frappe.db.set_value(
+            "Customer",
+            customer[0]["name"],
+            "custom_customer_code",
+            new_code
+        )
+        frappe.db.commit()
+
+        return {
+            "success":       True,
+            "customer_name": customer[0]["customer_name"],
+            "old_code":      old_code,
+            "new_code":      new_code
+        }
+    except Exception as e:
+        frappe.db.rollback()
+        return {"success": False, "error": str(e)}
