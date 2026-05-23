@@ -923,3 +923,255 @@ def change_customer_code(old_code=None, new_code=None):
     except Exception as e:
         frappe.db.rollback()
         return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_material_requests(token=None, limit=20, offset=0, search_text=None, status=None):
+    try:
+        limit  = int(limit  or 20)
+        offset = int(offset or 0)
+
+        filters = {}
+
+        is_search = bool(search_text and str(search_text).strip())
+        if is_search:
+            filters["name"] = ["like", f"%{str(search_text).strip()}%"]
+
+        if status and status != "All":
+            filters["status"] = status
+
+        requests = frappe.get_all(
+            "Material Request",
+            filters=filters,
+            fields=[
+                "name", "company", "transaction_date", "status",
+                "material_request_type", "schedule_date",
+                "set_warehouse", "docstatus"
+            ],
+            order_by="transaction_date desc",
+            limit=20 if is_search else limit,
+            start=0  if is_search else offset,
+            ignore_permissions=True
+        )
+
+        result = []
+        for req in requests:
+            items = frappe.get_all(
+                "Material Request Item",
+                filters={"parent": req["name"]},
+                fields=["item_code", "item_name", "qty", "received_qty", "uom", "warehouse"],
+                ignore_permissions=True
+            )
+            result.append({
+                "name":                  req["name"],
+                "company":               req["company"] or "",
+                "transaction_date":      str(req["transaction_date"] or ""),
+                "status":                req["status"] or "",
+                "material_request_type": req["material_request_type"] or "",
+                "schedule_date":         str(req["schedule_date"] or ""),
+                "warehouse":             req["set_warehouse"] or "",
+                "docstatus":             req["docstatus"],
+                "items":                 items
+            })
+
+        return {"material_requests": result, "is_search": is_search}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_material_requests error")
+        return {"error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_material_request_detail(token=None, name=None):
+    if not name:
+        return {"success": False, "error": "Missing name"}
+
+    if not frappe.db.exists("Material Request", name):
+        return {"success": False, "error": "Material Request not found"}
+
+    doc = frappe.get_doc("Material Request", name, ignore_permissions=True)
+
+    items = []
+    for it in doc.items:
+        items.append({
+            "item_code":    it.item_code        or "",
+            "item_name":    it.item_name        or "",
+            "qty":          float(it.qty        or 0),
+            "received_qty": float(it.received_qty or 0),
+            "uom":          it.uom              or "",
+            "warehouse":    it.warehouse        or "",
+            "schedule_date": str(it.schedule_date or ""),
+        })
+
+    return {
+        "success": True,
+        "material_request": {
+            "name":                  doc.name,
+            "company":               doc.company               or "",
+            "transaction_date":      str(doc.transaction_date  or ""),
+            "status":                doc.status                or "",
+            "material_request_type": doc.material_request_type or "",
+            "schedule_date":         str(doc.schedule_date     or ""),
+            "warehouse":             doc.set_warehouse         or "",
+            "set_from_warehouse":    doc.set_from_warehouse    or "",
+            "docstatus":             doc.docstatus,
+        },
+        "items": items
+    }
+
+
+@frappe.whitelist(allow_guest=True)
+def create_material_request():
+    try:
+        if frappe.request.method != "POST":
+            return {"success": False, "error": "Method not allowed"}
+
+        data               = json.loads(frappe.request.data)
+        items              = data.get("items")
+        purpose            = data.get("purpose", "Material Transfer")
+        company            = data.get("company", "OPTILENS ALGER")
+        required_by        = data.get("required_by") or frappe.utils.add_days(frappe.utils.today(), 7)
+        set_warehouse      = data.get("set_warehouse", "")
+        set_from_warehouse = data.get("set_from_warehouse", "")
+
+        if not items:
+            return {"success": False, "error": "Missing items"}
+
+        if isinstance(items, str):
+            items = json.loads(items)
+
+        if purpose == "Material Transfer":
+            if not set_from_warehouse:
+                return {"success": False, "error": "set_from_warehouse requis pour Material Transfer"}
+            if not set_warehouse:
+                return {"success": False, "error": "set_warehouse requis pour Material Transfer"}
+        else:
+            if not set_warehouse:
+                set_warehouse = frappe.db.get_value(
+                    "Warehouse", {"company": company, "is_group": 0}, "name"
+                ) or ""
+
+        doc_fields = {
+            "doctype":               "Material Request",
+            "material_request_type": purpose,
+            "transaction_date":      frappe.utils.today(),
+            "schedule_date":         required_by,
+            "company":               company,
+            "set_warehouse":         set_warehouse,
+            "items":                 [],
+        }
+
+        if purpose == "Material Transfer":
+            doc_fields["set_from_warehouse"] = set_from_warehouse
+
+        doc = frappe.get_doc(doc_fields)
+
+        for it in items:
+            item_code = it.get("item_code")
+            if not item_code:
+                continue
+            if not frappe.db.exists("Item", item_code):
+                continue
+
+            uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+
+            doc.append("items", {
+                "item_code":     item_code,
+                "qty":           float(it.get("qty") or 1),
+                "uom":           uom,
+                "warehouse":     it.get("warehouse") or set_warehouse,
+                "schedule_date": required_by,
+            })
+
+        if not doc.items:
+            return {"success": False, "error": "Aucun article valide trouvé"}
+
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        return {
+            "success":            True,
+            "id":                 doc.name,
+            "status":             doc.status,
+            "company":            company,
+            "purpose":            purpose,
+            "set_warehouse":      set_warehouse,
+            "set_from_warehouse": set_from_warehouse if purpose == "Material Transfer" else "",
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Material Request Error")
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def manage_material_request(name=None, action="submit"):
+    try:
+        if frappe.request and frappe.request.method == "POST":
+            content_type = frappe.request.headers.get("Content-Type", "")
+            if "application/json" in content_type:
+                data   = json.loads(frappe.request.data or "{}")
+                name   = name   or data.get("name")
+                action = data.get("action", action)
+
+        if not name:
+            return {"error": "Missing name"}
+
+        if not frappe.db.exists("Material Request", name):
+            return {"error": f"Material Request '{name}' not found"}
+
+        doc = frappe.get_doc("Material Request", name, ignore_permissions=True)
+
+        if action == "submit":
+            if doc.docstatus == 1:
+                return {"error": "Already submitted"}
+            if doc.docstatus == 2:
+                return {"error": "Document is cancelled"}
+            doc.submit()
+            frappe.db.commit()
+            return {"message": "Success", "detail": f"Material Request {name} submitted successfully", "status": doc.status}
+
+        elif action == "cancel":
+            if doc.docstatus == 2:
+                return {"error": "Already cancelled"}
+            if doc.docstatus == 0:
+                return {"error": "Cannot cancel a draft — delete it instead"}
+            doc.cancel()
+            frappe.db.commit()
+            return {"message": "Success", "detail": f"Material Request {name} cancelled successfully", "status": "Cancelled"}
+
+        elif action == "delete":
+            if doc.docstatus != 0:
+                return {"error": "Can only delete Draft documents"}
+            frappe.delete_doc("Material Request", name, ignore_permissions=True, force=True)
+            frappe.db.commit()
+            return {"message": "Success", "detail": f"Material Request {name} deleted successfully"}
+
+        else:
+            return {"error": f"Unknown action '{action}'. Use: submit, cancel, delete"}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "manage_material_request error")
+        return {"error": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_warehouses(token=None, company=None):
+    try:
+        filters = {"is_group": 0, "disabled": 0}
+        if company:
+            filters["company"] = company
+
+        warehouses = frappe.get_all(
+            "Warehouse",
+            filters=filters,
+            fields=["name", "warehouse_name", "company"],
+            order_by="warehouse_name asc",
+            ignore_permissions=True,
+        )
+
+        return {"warehouses": warehouses}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_warehouses error")
+        return {"error": str(e)}
