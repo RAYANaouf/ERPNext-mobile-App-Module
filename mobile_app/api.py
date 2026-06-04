@@ -59,15 +59,12 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0, search_
 
     allowed_docstatus = [0, 1]
 
-    # ── Filtres de base ──────────────────────────────────────────────────────
     filters = {"docstatus": ["in", allowed_docstatus]}
 
-    # ── Filtre search_text (optionnel) ───────────────────────────────────────
     is_search = bool(search_text and str(search_text).strip())
     if is_search:
         filters["name"] = ["like", f"%{str(search_text).strip()}%"]
 
-    # ── Filtre status (optionnel) ────────────────────────────────────────────
     if status and status != "All":
         filters["workflow_state"] = status
 
@@ -94,16 +91,13 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0, search_
 
     return {"stock_entries": out, "is_search": is_search}
 
+
 ################################################################################
 ##################  Get Stock Entry Details Function ###########################
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_stock_entry_details_by_name(token: str, name: str):
-    """
-    Endpoint pour récupérer les détails complets d'un Stock Entry par son nom.
-    Retourne : header + lignes d'articles.
-    """
     if not name:
         return {"error": "Missing Stock Entry name"}
 
@@ -118,13 +112,13 @@ def get_stock_entry_details_by_name(token: str, name: str):
     items = []
     for it in (doc.get("items") or []):
         items.append({
-            "id":            it.name or "",
-            "idx":           it.idx,
-            "itemName":      it.item_name or it.item_code or "",
+            "id":             it.name or "",
+            "idx":            it.idx,
+            "itemName":       it.item_name or it.item_code or "",
             "stockEntryName": it.item_code or "",
-            "fromWarehouse": it.s_warehouse or "",
-            "toWarehouse":   it.t_warehouse or "",
-            "quantity":      int(it.qty or 0),
+            "fromWarehouse":  it.s_warehouse or "",
+            "toWarehouse":    it.t_warehouse or "",
+            "quantity":       int(it.qty or 0),
         })
 
     return {
@@ -146,16 +140,14 @@ def get_stock_entry_details_by_name(token: str, name: str):
 
 @frappe.whitelist(allow_guest=True)
 def get_client_by_code(code=None):
-    """
-    Endpoint pour récupérer un client par son code personnalisé.
-    """
     if not code:
         return {"error": "Missing client code"}
 
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code},
-        fields=["name", "email_id", "mobile_no", "custom_debt", "custom_debt_date", "custom_customer_code", "default_price_list"],
+        fields=["name", "email_id", "mobile_no", "custom_debt", "custom_debt_date",
+                "custom_customer_code", "default_price_list"],
         limit=1
     )
 
@@ -188,22 +180,18 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
     customer_name = customer[0].name
 
-    # ── Filtres de base ──────────────────────────────────────────────────────
     filters_sales = {"customer": customer_name}
     filters_pos   = {"customer": customer_name, "docstatus": 1}
 
-    # ── Filtre search_text (optionnel) ───────────────────────────────────────
     if search_text and str(search_text).strip():
         q = str(search_text).strip()
         filters_sales["name"] = ["like", f"%{q}%"]
         filters_pos["name"]   = ["like", f"%{q}%"]
 
-    # ── Filtre status (optionnel) ────────────────────────────────────────────
     if status and status != "All":
         filters_sales["status"] = status
         filters_pos["status"]   = status
 
-    # ── Pas de pagination si recherche active ────────────────────────────────
     is_search = bool(search_text and str(search_text).strip())
 
     sales_invoices = frappe.get_all(
@@ -211,8 +199,8 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=Non
         filters=filters_sales,
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc",
-        limit=20      if is_search else limit,
-        start=0       if is_search else offset
+        limit=20  if is_search else limit,
+        start=0   if is_search else offset
     )
 
     pos_invoices = frappe.get_all(
@@ -220,25 +208,24 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=Non
         filters=filters_pos,
         fields=["name", "posting_date", "grand_total", "outstanding_amount", "status", "is_pos"],
         order_by="posting_date desc",
-        limit=20      if is_search else limit,
-        start=0       if is_search else offset
+        limit=20  if is_search else limit,
+        start=0   if is_search else offset
     )
 
     return {
         "customer_code":  code,
-        "is_search":      is_search,        
+        "is_search":      is_search,
         "sales_invoices": sales_invoices,
         "pos_invoices":   pos_invoices
     }
+
+
 ################################################################################
 ################  Get Notification By Customer Code Function ###################
 ################################################################################
 
 @frappe.whitelist(allow_guest=True)
 def get_notification_by_customer_code(code=None):
-    """
-    Récupère les notifications mobiles d'un client par son code personnalisé.
-    """
     if not code:
         return {"error": "Missing client code"}
 
@@ -256,16 +243,11 @@ def get_notification_by_customer_code(code=None):
 
     all_notification = frappe.get_all(
         "Mobile Notification",
-        filters={
-            "customer":  customer_name,
-            "docstatus": 1
-        },
+        filters={"customer": customer_name, "docstatus": 1},
         fields=["name", "msg", "title"],
     )
 
-    return {
-        "notification": all_notification,
-    }
+    return {"notification": all_notification}
 
 
 ################################################################################
@@ -291,14 +273,12 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
     customer_name = customer[0].name
 
-    # ── Filtres de base ──────────────────────────────────────────────────────
     filters = {
         "party_type": "Customer",
         "party":      customer_name,
         "docstatus":  1
     }
 
-    # ── Filtre search_text (optionnel) ───────────────────────────────────────
     is_search = bool(search_text and str(search_text).strip())
     if is_search:
         filters["name"] = ["like", f"%{str(search_text).strip()}%"]
@@ -319,10 +299,7 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
     refs = frappe.get_all(
         "Payment Entry Reference",
-        filters={
-            "parent":            ["in", pe_names],
-            "reference_doctype": "Sales Invoice"
-        },
+        filters={"parent": ["in", pe_names], "reference_doctype": "Sales Invoice"},
         fields=["parent", "reference_name", "allocated_amount",
                 "total_amount", "outstanding_amount"],
         order_by="parent desc"
@@ -362,7 +339,6 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
 @frappe.whitelist(allow_guest=True)
 def get_single_invoice_details(invoice_name=None):
-
     try:
         if not invoice_name:
             return {"error": "Missing invoice name"}
@@ -372,6 +348,7 @@ def get_single_invoice_details(invoice_name=None):
             invoice_type = "POS Invoice"
             if not frappe.db.exists(invoice_type, invoice_name):
                 return {"error": "Invoice not found"}
+
         doc = frappe.get_doc(invoice_type, invoice_name)
 
         items = []
@@ -383,7 +360,7 @@ def get_single_invoice_details(invoice_name=None):
                 "amount":    float(item.amount or 0),
             })
 
-        response = {
+        return {
             "invoice": {
                 "name":               doc.name,
                 "posting_date":       str(doc.posting_date or ""),
@@ -394,7 +371,6 @@ def get_single_invoice_details(invoice_name=None):
             },
             "items": items,
         }
-        return response
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Invoice Detail Error")
@@ -407,12 +383,11 @@ def get_single_invoice_details(invoice_name=None):
 
 @frappe.whitelist(allow_guest=True)
 def manage_stock_entry(name=None, items=None, action="save"):
-
     try:
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
             if "application/json" in content_type:
-                data = json.loads(frappe.request.data or "{}")
+                data   = json.loads(frappe.request.data or "{}")
                 name   = name   or data.get("name")
                 items  = items  or data.get("items")
                 action = data.get("action", action)
@@ -435,20 +410,16 @@ def manage_stock_entry(name=None, items=None, action="save"):
 
         for it in items:
             item_code = it.get("item_code") or it.get("itemName")
-
-            if not item_code:
-                continue
-
-            if not frappe.db.exists("Item", item_code):
+            if not item_code or not frappe.db.exists("Item", item_code):
                 continue
 
             qty = float(it.get("quantity", 0))
 
             if item_code in existing_items:
                 row = existing_items[item_code]
-                row.qty = qty
+                row.qty         = qty
                 row.s_warehouse = it.get("fromWarehouse", row.s_warehouse)
-                row.t_warehouse = it.get("toWarehouse", row.t_warehouse)
+                row.t_warehouse = it.get("toWarehouse",   row.t_warehouse)
             else:
                 doc.append("items", {
                     "item_code":   item_code,
@@ -463,15 +434,9 @@ def manage_stock_entry(name=None, items=None, action="save"):
         if action == "approve":
             doc.submit()
             frappe.db.commit()
-            return {
-                "message": "Success",
-                "detail":  f"Stock Entry {name} approved successfully"
-            }
+            return {"message": "Success", "detail": f"Stock Entry {name} approved successfully"}
 
-        return {
-            "message": "Success",
-            "detail":  f"Stock Entry {name} saved successfully"
-        }
+        return {"message": "Success", "detail": f"Stock Entry {name} saved successfully"}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "manage_stock_entry error")
@@ -484,18 +449,18 @@ def manage_stock_entry(name=None, items=None, action="save"):
 
 @frappe.whitelist(allow_guest=True)
 def search_items(search_text=None, customer_code=None):
- 
+
     if not search_text:
         return []
- 
+
     search_text = str(search_text).strip()
- 
+
     if len(search_text) > 50:
         return {"status": "error", "message": "Recherche trop longue (max 50 caractères)"}
- 
+
     if not re.match(r'^[\w\s\-\.+]+$', search_text, re.UNICODE):
         return {"status": "error", "message": "Caractères non autorisés dans la recherche"}
- 
+
     items = frappe.get_all(
         "Item",
         filters={"disabled": 0, "is_sales_item": 1},
@@ -506,10 +471,10 @@ def search_items(search_text=None, customer_code=None):
         fields=["item_code", "item_name"],
         limit=10
     )
- 
+
     if not items:
         return []
- 
+
     price_list = "Public - Alger"
     if customer_code:
         customer_price_list = frappe.db.get_value(
@@ -519,39 +484,32 @@ def search_items(search_text=None, customer_code=None):
         )
         if customer_price_list:
             price_list = customer_price_list
- 
+
     item_codes = [item["item_code"] for item in items]
- 
+
     prices_raw = frappe.get_all(
         "Item Price",
-        filters={
-            "item_code": ["in", item_codes],
-            "price_list": price_list,
-            "selling": 1
-        },
+        filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
         fields=["item_code", "price_list_rate"]
     )
     price_map = {p["item_code"]: p["price_list_rate"] for p in prices_raw}
- 
+
     fallback_map = {}
     if price_list != "Public - Alger":
         fallback_raw = frappe.get_all(
             "Item Price",
-            filters={
-                "item_code": ["in", item_codes],
-                "price_list": "Public - Alger",
-                "selling": 1
-            },
+            filters={"item_code": ["in", item_codes], "price_list": "Public - Alger", "selling": 1},
             fields=["item_code", "price_list_rate"]
         )
         fallback_map = {p["item_code"]: p["price_list_rate"] for p in fallback_raw}
- 
+
     for item in items:
         code = item["item_code"]
         rate = price_map.get(code) or fallback_map.get(code)
         item["standard_rate"] = flt(rate) if rate else 0.0
- 
+
     return items
+
 
 ################################################################################
 ################  Get Announcements By Customer Code Function ##################
@@ -573,11 +531,12 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
     all_announcements = frappe.get_all(
         "Annonce mobile",
         filters=[
-            ["docstatus",     "=",  1],
-            ["publish_date",  "<=", current_date],
-            ["expiry_date",   ">=", current_date]
+            ["docstatus",    "=",  1],
+            ["publish_date", "<=", current_date],
+            ["expiry_date",  ">=", current_date]
         ],
-        fields=["name", "title", "announcement_typ", "priority", "color", "description", "banner_image", "publish_date"],
+        fields=["name", "title", "announcement_typ", "priority", "color",
+                "description", "banner_image", "publish_date"],
         order_by="publish_date desc",
         ignore_permissions=True
     )
@@ -609,8 +568,8 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
     paginated_list = valid_announcements[offset: offset + limit]
 
     return {
-        "customer":    customer_name,
-        "total_count": len(valid_announcements),
+        "customer":      customer_name,
+        "total_count":   len(valid_announcements),
         "announcements": paginated_list
     }
 
@@ -624,55 +583,44 @@ def get_items_by_customer_code(customer_code):
     try:
         if not customer_code:
             return {"status": "error", "message": "customer_code manquant"}
- 
+
         price_list = frappe.db.get_value(
             "Customer",
             {"custom_customer_code": customer_code},
             "default_price_list"
         ) or "Public - Alger"
- 
+
         items = frappe.get_all(
             "Item",
             filters={"disabled": 0, "is_sales_item": 1},
-            fields=["item_code", "item_name", "description",
-                    "item_group", "stock_uom"]
+            fields=["item_code", "item_name", "description", "item_group", "stock_uom"]
         )
- 
+
         if not items:
             return {"status": "success", "price_list": price_list, "items": []}
- 
+
         item_codes = [item["item_code"] for item in items]
- 
+
         customer_prices_raw = frappe.get_all(
             "Item Price",
-            filters={
-                "item_code": ["in", item_codes],
-                "price_list": price_list,
-                "selling": 1
-            },
+            filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
             fields=["item_code", "price_list_rate"]
         )
         customer_price_map = {p["item_code"]: p["price_list_rate"] for p in customer_prices_raw}
- 
+
         fallback_price_map = {}
         if price_list != "Public - Alger":
             fallback_prices_raw = frappe.get_all(
                 "Item Price",
-                filters={
-                    "item_code": ["in", item_codes],
-                    "price_list": "Public - Alger",
-                    "selling": 1
-                },
+                filters={"item_code": ["in", item_codes], "price_list": "Public - Alger", "selling": 1},
                 fields=["item_code", "price_list_rate"]
             )
             fallback_price_map = {p["item_code"]: p["price_list_rate"] for p in fallback_prices_raw}
- 
+
         result = []
         for item in items:
             code = item["item_code"]
- 
             rate = customer_price_map.get(code) or fallback_price_map.get(code) or 0.0
- 
             result.append({
                 "item_code":   code,
                 "item_name":   item["item_name"],
@@ -683,16 +631,13 @@ def get_items_by_customer_code(customer_code):
                 "currency":    "DZD",
                 "price_list":  price_list
             })
- 
-        return {
-            "status":     "success",
-            "price_list": price_list,
-            "items":      result
-        }
- 
+
+        return {"status": "success", "price_list": price_list, "items": result}
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Erreur get_items")
         return {"status": "error", "message": str(e)}
+
 
 ################################################################################
 ######################  Create Sales Order Function ############################
@@ -718,7 +663,6 @@ def create_sales_order():
 
         if not code_envoye:
             return {"status": "error", "message": "customer_code manquant"}
-
         if not items:
             return {"status": "error", "message": "items manquants"}
 
@@ -730,10 +674,7 @@ def create_sales_order():
             return {"status": "error", "message": f"Client '{code_envoye}' introuvable dans ERPNext"}
 
         customer_data = frappe.db.get_value(
-            "Customer",
-            customer_id,
-            "default_price_list",
-            as_dict=True
+            "Customer", customer_id, "default_price_list", as_dict=True
         )
         price_list = (customer_data.get("default_price_list") if customer_data else None) or "Public - Alger"
 
@@ -756,11 +697,7 @@ def create_sales_order():
 
             rate = frappe.db.get_value(
                 "Item Price",
-                {
-                    "item_code": item_code,
-                    "price_list": price_list,
-                    "selling": 1
-                },
+                {"item_code": item_code, "price_list": price_list, "selling": 1},
                 "price_list_rate"
             ) or 0.0
 
@@ -849,7 +786,6 @@ def get_order_details(order_id=None):
 
 @frappe.whitelist(allow_guest=True)
 def create_customer_complaint():
-
     try:
         if frappe.request.method != "POST":
             return {"error": "Method not allowed"}
@@ -857,13 +793,12 @@ def create_customer_complaint():
         data = json.loads(frappe.request.data)
 
         doc = frappe.get_doc({
-        
-            "doctype":                 "reclamtion client",
-            "client":                  data.get("client"),
-            "date_reception":          data.get("date_reception") or frappe.utils.today(),
-            "documents_référence":     data.get("reference"),
-            "desciption_reclamation":  data.get("description"),
-            "docstatus":               0
+            "doctype":                "reclamtion client",
+            "client":                 data.get("client"),
+            "date_reception":         data.get("date_reception") or frappe.utils.today(),
+            "documents_référence":    data.get("reference"),
+            "desciption_reclamation": data.get("description"),
+            "docstatus":              0
         })
 
         doc.insert(ignore_permissions=True)
@@ -874,7 +809,8 @@ def create_customer_complaint():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
         return {"error": str(e)}
-    
+
+
 ################################################################################
 ######################  Change Customer Code Function ##########################
 ################################################################################
@@ -906,12 +842,7 @@ def change_customer_code(old_code=None, new_code=None):
         return {"success": False, "error": "New code already used by another customer"}
 
     try:
-        frappe.db.set_value(
-            "Customer",
-            customer[0]["name"],
-            "custom_customer_code",
-            new_code
-        )
+        frappe.db.set_value("Customer", customer[0]["name"], "custom_customer_code", new_code)
         frappe.db.commit()
 
         return {
@@ -923,7 +854,7 @@ def change_customer_code(old_code=None, new_code=None):
     except Exception as e:
         frappe.db.rollback()
         return {"success": False, "error": str(e)}
-    
+
 
 ################################################################################
 ######################  Get Material Requests Function #########################
@@ -951,7 +882,8 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
                 "name", "company", "transaction_date", "status",
                 "material_request_type", "schedule_date",
                 "set_warehouse", "set_from_warehouse",
-                "price_list", "docstatus"
+                "buying_price_list",   # ✅ nom correct
+                "docstatus"
             ],
             order_by="transaction_date desc",
             limit=20  if is_search else limit,
@@ -964,23 +896,20 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
             items = frappe.get_all(
                 "Material Request Item",
                 filters={"parent": req["name"]},
-                fields=[
-                    "item_code", "item_name", "qty",
-                    "received_qty", "uom", "warehouse",
-                    "schedule_date"
-                ],
+                fields=["item_code", "item_name", "qty",
+                        "received_qty", "uom", "warehouse", "schedule_date"],
                 ignore_permissions=True
             )
             result.append({
                 "name":                  req["name"],
-                "company":               req["company"]               or "",
-                "transaction_date":      str(req["transaction_date"]  or ""),
-                "status":                req["status"]                or "",
-                "material_request_type": req["material_request_type"] or "",
-                "schedule_date":         str(req["schedule_date"]     or ""),
-                "warehouse":             req["set_warehouse"]         or "",
-                "set_from_warehouse":    req["set_from_warehouse"]    or "",
-                "price_list":            req["price_list"]            or "",
+                "company":               req["company"]                or "",
+                "transaction_date":      str(req["transaction_date"]   or ""),
+                "status":                req["status"]                 or "",
+                "material_request_type": req["material_request_type"]  or "",
+                "schedule_date":         str(req["schedule_date"]      or ""),
+                "warehouse":             req["set_warehouse"]          or "",
+                "set_from_warehouse":    req["set_from_warehouse"]     or "",
+                "price_list":            req["buying_price_list"]      or "",  # ✅ correct
                 "docstatus":             req["docstatus"],
                 "items":                 items
             })
@@ -1010,13 +939,13 @@ def get_material_request_detail(token=None, name=None):
         items = []
         for it in doc.items:
             items.append({
-                "item_code":     it.item_code        or "",
-                "item_name":     it.item_name        or "",
-                "qty":           float(it.qty        or 0),
+                "item_code":     it.item_code          or "",
+                "item_name":     it.item_name          or "",
+                "qty":           float(it.qty          or 0),
                 "received_qty":  float(it.received_qty or 0),
-                "uom":           it.uom              or "",
-                "warehouse":     it.warehouse        or "",
-                "schedule_date": str(it.schedule_date or ""),
+                "uom":           it.uom                or "",
+                "warehouse":     it.warehouse          or "",
+                "schedule_date": str(it.schedule_date  or ""),
             })
 
         return {
@@ -1030,7 +959,7 @@ def get_material_request_detail(token=None, name=None):
                 "schedule_date":         str(doc.schedule_date     or ""),
                 "warehouse":             doc.set_warehouse         or "",
                 "set_from_warehouse":    doc.set_from_warehouse    or "",
-                "price_list":            doc.price_list            or "",
+                "price_list":            doc.buying_price_list     or "",  # ✅ correct
                 "docstatus":             doc.docstatus,
             },
             "items": items
@@ -1059,7 +988,7 @@ def create_material_request():
                              frappe.utils.add_days(frappe.utils.today(), 7)
         set_warehouse      = data.get("set_warehouse",      "")
         set_from_warehouse = data.get("set_from_warehouse", "")
-        price_list         = data.get("price_list",         "")
+        price_list         = data.get("price_list",         "")  # ✅ correct (from Flutter)
 
         if not items:
             return {"success": False, "error": "Missing items"}
@@ -1067,33 +996,24 @@ def create_material_request():
         if isinstance(items, str):
             items = json.loads(items)
 
-        # ── Validation warehouse selon purpose ───────────────────────────────
         if purpose == "Material Transfer":
             if not set_from_warehouse:
-                return {"success": False,
-                        "error": "Source warehouse required for Material Transfer"}
+                return {"success": False, "error": "Source warehouse required for Material Transfer"}
             if not set_warehouse:
-                return {"success": False,
-                        "error": "Target warehouse required for Material Transfer"}
+                return {"success": False, "error": "Target warehouse required for Material Transfer"}
 
-        elif purpose in ["Material Issue"]:
+        elif purpose == "Material Issue":
             if not set_from_warehouse:
-                return {"success": False,
-                        "error": "Source warehouse required for Material Issue"}
+                return {"success": False, "error": "Source warehouse required for Material Issue"}
             if not set_warehouse:
                 set_warehouse = set_from_warehouse
 
         else:
-            # Material Receipt, Purchase, Customer Provided,
-            # Material Transfer for Manufacture
             if not set_warehouse:
                 set_warehouse = frappe.db.get_value(
-                    "Warehouse",
-                    {"company": company, "is_group": 0},
-                    "name"
+                    "Warehouse", {"company": company, "is_group": 0}, "name"
                 ) or ""
 
-        # ── Construire le document ───────────────────────────────────────────
         doc_fields = {
             "doctype":               "Material Request",
             "material_request_type": purpose,
@@ -1105,26 +1025,21 @@ def create_material_request():
         }
 
         if set_from_warehouse and purpose in [
-            "Material Transfer",
-            "Material Issue",
-            "Material Transfer for Manufacture"
+            "Material Transfer", "Material Issue", "Material Transfer for Manufacture"
         ]:
             doc_fields["set_from_warehouse"] = set_from_warehouse
 
-        if price_list:
-            doc_fields["price_list"] = price_list
+        if price_list:                                    # ✅ ':' ajouté
+            doc_fields["buying_price_list"] = price_list  # ✅ sans double 't'
 
         doc = frappe.get_doc(doc_fields)
 
         for it in items:
             item_code = it.get("item_code")
-            if not item_code:
-                continue
-            if not frappe.db.exists("Item", item_code):
+            if not item_code or not frappe.db.exists("Item", item_code):
                 continue
 
             uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
-
             doc.append("items", {
                 "item_code":     item_code,
                 "qty":           float(it.get("qty") or 1),
@@ -1177,7 +1092,6 @@ def manage_material_request(name=None, action="submit"):
 
         doc = frappe.get_doc("Material Request", name, ignore_permissions=True)
 
-        # ── Submit ────────────────────────────────────────────────────────────
         if action == "submit":
             if doc.docstatus == 1:
                 return {"error": "Already submitted"}
@@ -1185,13 +1099,8 @@ def manage_material_request(name=None, action="submit"):
                 return {"error": "Document is cancelled"}
             doc.submit()
             frappe.db.commit()
-            return {
-                "message": "Success",
-                "detail":  f"Material Request {name} submitted successfully",
-                "status":  doc.status
-            }
+            return {"message": "Success", "detail": f"Material Request {name} submitted successfully", "status": doc.status}
 
-        # ── Cancel ────────────────────────────────────────────────────────────
         elif action == "cancel":
             if doc.docstatus == 2:
                 return {"error": "Already cancelled"}
@@ -1199,26 +1108,14 @@ def manage_material_request(name=None, action="submit"):
                 return {"error": "Cannot cancel a draft — delete it instead"}
             doc.cancel()
             frappe.db.commit()
-            return {
-                "message": "Success",
-                "detail":  f"Material Request {name} cancelled successfully",
-                "status":  "Cancelled"
-            }
+            return {"message": "Success", "detail": f"Material Request {name} cancelled successfully", "status": "Cancelled"}
 
-        # ── Delete (Draft only) ───────────────────────────────────────────────
         elif action == "delete":
             if doc.docstatus != 0:
                 return {"error": "Can only delete Draft documents"}
-            frappe.delete_doc(
-                "Material Request", name,
-                ignore_permissions=True,
-                force=True
-            )
+            frappe.delete_doc("Material Request", name, ignore_permissions=True, force=True)
             frappe.db.commit()
-            return {
-                "message": "Success",
-                "detail":  f"Material Request {name} deleted successfully"
-            }
+            return {"message": "Success", "detail": f"Material Request {name} deleted successfully"}
 
         else:
             return {"error": f"Unknown action '{action}'. Use: submit, cancel, delete"}
@@ -1249,19 +1146,14 @@ def create_stock_entry_from_mr(name=None):
 
         mr = frappe.get_doc("Material Request", name, ignore_permissions=True)
 
-        # ── Vérifications ────────────────────────────────────────────────────
         if mr.docstatus != 1:
             return {"error": "Material Request must be submitted first"}
-
         if mr.material_request_type != "Material Transfer":
             return {"error": "Only Material Transfer type can create a Stock Entry"}
-
         if mr.status in ["Transferred", "Received", "Stopped"]:
             return {"error": f"Material Request already {mr.status}"}
 
-        # ── Créer Stock Entry depuis MR ───────────────────────────────────────
-        from erpnext.stock.doctype.material_request.material_request \
-            import make_stock_entry
+        from erpnext.stock.doctype.material_request.material_request import make_stock_entry
 
         se = make_stock_entry(name)
         se.insert(ignore_permissions=True)
