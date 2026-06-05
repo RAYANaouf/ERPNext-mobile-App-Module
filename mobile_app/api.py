@@ -12,13 +12,17 @@ from frappe.utils import flt, add_days, today
 ################################################################################
 
 def get_user_from_sid(token):
-    """Retrieves the ERPNext user from the session SID reliably."""
+    """Retrieves the ERPNext user from the session SID using direct SQL query on tabSessions."""
     if not token:
         return None
     try:
-        session_info = frappe.db.get_value("Sessions", {"sid": token}, ["user", "status"], as_dict=True)
-        if session_info and session_info.status != "Expired":
-            return session_info.user
+        result = frappe.db.sql(
+            "SELECT user, status FROM tabSessions WHERE sid=%s LIMIT 1",
+            (token,),
+            as_dict=True
+        )
+        if result and result[0].get("status") != "Expired":
+            return result[0].get("user")
     except Exception:
         pass
     return None
@@ -27,18 +31,33 @@ def get_user_from_sid(token):
 def get_user_permissions(user):
     """
     Returns the allowed companies and warehouses for a given user.
-    If no permissions are defined -> returns empty lists (no restrictions for Admins).
+    Filters out permissions restricted to irrelevant doctypes using 'applicable_for'.
     """
-    allowed_companies = frappe.get_all(
+    # Fetch company permissions
+    company_perms = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Company"},
-        pluck="for_value"
+        fields=["for_value", "applicable_for"]
     )
-    allowed_warehouses = frappe.get_all(
+    
+    allowed_companies = []
+    for perm in company_perms:
+        # Include if it's global OR specifically allowed for material requests/stock entry
+        if not perm.get("applicable_for") or perm.get("applicable_for") in ["Material Request", "Stock Entry"]:
+            allowed_companies.append(perm.get("for_value"))
+
+    # Fetch warehouse permissions
+    warehouse_perms = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Warehouse"},
-        pluck="for_value"
+        fields=["for_value", "applicable_for"]
     )
+    
+    allowed_warehouses = []
+    for perm in warehouse_perms:
+        if not perm.get("applicable_for") or perm.get("applicable_for") in ["Material Request", "Stock Entry", "Warehouse"]:
+            allowed_warehouses.append(perm.get("for_value"))
+
     return allowed_companies, allowed_warehouses
 
 
