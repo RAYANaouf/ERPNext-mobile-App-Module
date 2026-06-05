@@ -8,6 +8,41 @@ from frappe.utils import flt, add_days, today
 
 
 ################################################################################
+####################  Helper — Get User From SID Token #########################
+################################################################################
+
+def get_user_from_sid(token):
+    """Retrieves the ERPNext user from the session SID reliably."""
+    if not token:
+        return None
+    try:
+        session_info = frappe.db.get_value("Sessions", {"sid": token}, ["user", "status"], as_dict=True)
+        if session_info and session_info.status != "Expired":
+            return session_info.user
+    except Exception:
+        pass
+    return None
+
+
+def get_user_permissions(user):
+    """
+    Returns the allowed companies and warehouses for a given user.
+    If no permissions are defined -> returns empty lists (no restrictions for Admins).
+    """
+    allowed_companies = frappe.get_all(
+        "User Permission",
+        filters={"user": user, "allow": "Company"},
+        pluck="for_value"
+    )
+    allowed_warehouses = frappe.get_all(
+        "User Permission",
+        filters={"user": user, "allow": "Warehouse"},
+        pluck="for_value"
+    )
+    return allowed_companies, allowed_warehouses
+
+
+################################################################################
 ############################## Hello World Function ############################
 ################################################################################
 
@@ -35,11 +70,16 @@ def login(email: str, password: str):
         sid = frappe.session.sid
         full_name = frappe.db.get_value("User", email, "full_name")
 
+        # Fetch user permissions to return them to the client
+        allowed_companies, allowed_warehouses = get_user_permissions(email)
+
         return {
             "user": {
-                "sid":   sid,
-                "email": frappe.session.user,
-                "name":  full_name,
+                "sid":                sid,
+                "email":              frappe.session.user,
+                "name":               full_name,
+                "allowed_companies":  allowed_companies,
+                "allowed_warehouses": allowed_warehouses,
             }
         }
 
@@ -57,9 +97,18 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0, search_
     limit  = int(limit  or 20)
     offset = int(offset or 0)
 
-    allowed_docstatus = [0, 1]
+    user = get_user_from_sid(token)
+    if not user:
+        return {"error": "Invalid session"}
 
+    allowed_companies, allowed_warehouses = get_user_permissions(user)
+
+    allowed_docstatus = [0, 1]
     filters = {"docstatus": ["in", allowed_docstatus]}
+
+    # Filter by allowed warehouse if restrictions exist
+    if allowed_warehouses:
+        filters["from_warehouse"] = ["in", allowed_warehouses]
 
     is_search = bool(search_text and str(search_text).strip())
     if is_search:
@@ -101,6 +150,10 @@ def get_stock_entry_details_by_name(token: str, name: str):
     if not name:
         return {"error": "Missing Stock Entry name"}
 
+    user = get_user_from_sid(token)
+    if not user:
+        return {"error": "Invalid session"}
+
     if not frappe.db.exists("Stock Entry", name):
         return {"error": "Stock Entry not found"}
 
@@ -108,6 +161,11 @@ def get_stock_entry_details_by_name(token: str, name: str):
 
     if doc.docstatus == 2:
         return {"error": "Stock Entry is cancelled"}
+
+    # Check warehouse access restrictions
+    allowed_companies, allowed_warehouses = get_user_permissions(user)
+    if allowed_warehouses and doc.from_warehouse and doc.from_warehouse not in allowed_warehouses:
+        return {"error": "Access denied for this Stock Entry"}
 
     items = []
     for it in (doc.get("items") or []):
@@ -384,6 +442,7 @@ def get_single_invoice_details(invoice_name=None):
 @frappe.whitelist(allow_guest=True)
 def manage_stock_entry(name=None, items=None, action="save"):
     try:
+        token = None
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
             if "application/json" in content_type:
@@ -391,6 +450,11 @@ def manage_stock_entry(name=None, items=None, action="save"):
                 name   = name   or data.get("name")
                 items  = items  or data.get("items")
                 action = data.get("action", action)
+                token  = data.get("token")
+
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
 
         if not name or not items:
             return {"error": "Missing parameters: name or items"}
@@ -402,6 +466,11 @@ def manage_stock_entry(name=None, items=None, action="save"):
 
         if doc.docstatus != 0:
             return {"error": "Stock Entry already submitted or cancelled"}
+
+        # Validate warehouse access rights
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+        if allowed_warehouses and doc.from_warehouse and doc.from_warehouse not in allowed_warehouses:
+            return {"error": "Access denied for this Stock Entry"}
 
         if isinstance(items, str):
             items = json.loads(items)
@@ -456,10 +525,10 @@ def search_items(search_text=None, customer_code=None):
     search_text = str(search_text).strip()
 
     if len(search_text) > 50:
-        return {"status": "error", "message": "Recherche trop longue (max 50 caractères)"}
+        return {"status": "error", "message": "Search text too long (max 50 characters)"}
 
     if not re.match(r'^[\w\s\-\.+]+$', search_text, re.UNICODE):
-        return {"status": "error", "message": "Caractères non autorisés dans la recherche"}
+        return {"status": "error", "message": "Unauthorized characters in search text"}
 
     items = frappe.get_all(
         "Item",
@@ -582,7 +651,7 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
 def get_items_by_customer_code(customer_code):
     try:
         if not customer_code:
-            return {"status": "error", "message": "customer_code manquant"}
+            return {"status": "error", "message": "Missing customer_code"}
 
         price_list = frappe.db.get_value(
             "Customer",
@@ -635,7 +704,7 @@ def get_items_by_customer_code(customer_code):
         return {"status": "success", "price_list": price_list, "items": result}
 
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Erreur get_items")
+        frappe.log_error(frappe.get_traceback(), "Error get_items")
         return {"status": "error", "message": str(e)}
 
 
@@ -662,16 +731,16 @@ def create_sales_order():
         items       = data.get("items")
 
         if not code_envoye:
-            return {"status": "error", "message": "customer_code manquant"}
+            return {"status": "error", "message": "Missing customer_code"}
         if not items:
-            return {"status": "error", "message": "items manquants"}
+            return {"status": "error", "message": "Missing items"}
 
         if isinstance(items, str):
             items = json.loads(items)
 
         customer_id = frappe.db.get_value("Customer", {"custom_customer_code": code_envoye}, "name")
         if not customer_id:
-            return {"status": "error", "message": f"Client '{code_envoye}' introuvable dans ERPNext"}
+            return {"status": "error", "message": f"Customer '{code_envoye}' not found in ERPNext"}
 
         customer_data = frappe.db.get_value(
             "Customer", customer_id, "default_price_list", as_dict=True
@@ -719,7 +788,7 @@ def create_sales_order():
         return {"status": "success", "order_id": so.name}
 
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Erreur Commande Mobile")
+        frappe.log_error(frappe.get_traceback(), "Mobile Order Error")
         return {"status": "error", "message": str(e)}
 
 
@@ -730,12 +799,12 @@ def create_sales_order():
 @frappe.whitelist(allow_guest=True)
 def get_customer_orders(customer_code):
     if not customer_code:
-        return {"status": "error", "message": "customer_code manquant"}
+        return {"status": "error", "message": "Missing customer_code"}
 
     customer_id = frappe.db.get_value("Customer", {"custom_customer_code": customer_code}, "name")
 
     if not customer_id:
-        return {"status": "error", "message": f"Client '{customer_code}' introuvable"}
+        return {"status": "error", "message": f"Customer '{customer_code}' not found"}
 
     orders = frappe.get_all(
         "Sales Order",
@@ -756,7 +825,7 @@ def get_order_details(order_id=None):
         order_id = frappe.form_dict.get('order_id')
 
     if not order_id:
-        return {"status": "error", "message": "ID de commande manquant"}
+        return {"status": "error", "message": "Missing order ID"}
 
     try:
         doc = frappe.get_doc("Sales Order", order_id, ignore_permissions=True)
@@ -777,7 +846,7 @@ def get_order_details(order_id=None):
             "items":       items_list
         }
     except Exception as e:
-        return {"status": "error", "message": f"Commande introuvable : {str(e)}"}
+        return {"status": "error", "message": f"Order not found: {str(e)}"}
 
 
 ################################################################################
@@ -796,7 +865,7 @@ def create_customer_complaint():
             "doctype":                "reclamtion client",
             "client":                 data.get("client"),
             "date_reception":         data.get("date_reception") or frappe.utils.today(),
-            "documents_référence":    data.get("reference"),
+            "documents_reference":    data.get("reference"),
             "desciption_reclamation": data.get("description"),
             "docstatus":              0
         })
@@ -857,6 +926,40 @@ def change_customer_code(old_code=None, new_code=None):
 
 
 ################################################################################
+######################  Get Companies Function #################################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def get_companies(token=None):
+    try:
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
+
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+
+        filters = {}
+
+        # Filter by allowed companies if restrictions exist
+        if allowed_companies:
+            filters["name"] = ["in", allowed_companies]
+
+        companies = frappe.get_all(
+            "Company",
+            filters=filters,
+            fields=["name", "company_name", "default_currency"],
+            order_by="company_name asc",
+            ignore_permissions=True,
+        )
+
+        return {"companies": companies}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_companies error")
+        return {"error": str(e)}
+
+
+################################################################################
 ######################  Get Material Requests Function #########################
 ################################################################################
 
@@ -866,7 +969,19 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
         limit  = int(limit  or 20)
         offset = int(offset or 0)
 
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
+
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+
         filters = {}
+
+        if allowed_companies:
+            filters["company"] = ["in", allowed_companies]
+
+        if allowed_warehouses:
+            filters["set_warehouse"] = ["in", allowed_warehouses]
 
         is_search = bool(search_text and str(search_text).strip())
         if is_search:
@@ -882,7 +997,7 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
                 "name", "company", "transaction_date", "status",
                 "material_request_type", "schedule_date",
                 "set_warehouse", "set_from_warehouse",
-                "buying_price_list",   # ✅ nom correct
+                "buying_price_list",
                 "docstatus"
             ],
             order_by="transaction_date desc",
@@ -909,7 +1024,7 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
                 "schedule_date":         str(req["schedule_date"]      or ""),
                 "warehouse":             req["set_warehouse"]          or "",
                 "set_from_warehouse":    req["set_from_warehouse"]     or "",
-                "price_list":            req["buying_price_list"]      or "",  # ✅ correct
+                "price_list":            req["buying_price_list"]      or "",
                 "docstatus":             req["docstatus"],
                 "items":                 items
             })
@@ -931,10 +1046,21 @@ def get_material_request_detail(token=None, name=None):
         if not name:
             return {"success": False, "error": "Missing name"}
 
+        user = get_user_from_sid(token)
+        if not user:
+            return {"success": False, "error": "Invalid session"}
+
         if not frappe.db.exists("Material Request", name):
             return {"success": False, "error": "Material Request not found"}
 
-        doc = frappe.get_doc("Material Request", name, ignore_permissions=True)
+        doc = frappe.get_doc("Material Request", name)
+
+        # Enforce company and warehouse restrictions if they exist
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+        if allowed_companies and doc.company and doc.company not in allowed_companies:
+            return {"success": False, "error": "Access denied for this Material Request (Company restriction)"}
+        if allowed_warehouses and doc.set_warehouse and doc.set_warehouse not in allowed_warehouses:
+            return {"success": False, "error": "Access denied for this Material Request (Warehouse restriction)"}
 
         items = []
         for it in doc.items:
@@ -959,7 +1085,7 @@ def get_material_request_detail(token=None, name=None):
                 "schedule_date":         str(doc.schedule_date     or ""),
                 "warehouse":             doc.set_warehouse         or "",
                 "set_from_warehouse":    doc.set_from_warehouse    or "",
-                "price_list":            doc.buying_price_list     or "",  # ✅ correct
+                "price_list":            doc.buying_price_list     or "",
                 "docstatus":             doc.docstatus,
             },
             "items": items
@@ -981,14 +1107,36 @@ def create_material_request():
             return {"success": False, "error": "Method not allowed"}
 
         data               = json.loads(frappe.request.data)
+        token              = data.get("token")
         items              = data.get("items")
         purpose            = data.get("purpose", "Material Transfer")
-        company            = data.get("company", "OPTILENS ALGER")
-        required_by        = data.get("required_by") or \
-                             frappe.utils.add_days(frappe.utils.today(), 7)
+        
+        user = get_user_from_sid(token)
+        if not user:
+            return {"success": False, "error": "Invalid session"}
+
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+
+        # Dynamic company assignment according to user permissions
+        company = data.get("company")
+        if not company:
+            if allowed_companies:
+                company = allowed_companies[0]
+            else:
+                company = frappe.db.get_default("company") or "OPTILENS ALGER"
+
+        if allowed_companies and company not in allowed_companies:
+            return {"success": False, "error": f"Access denied for company '{company}'"}
+
         set_warehouse      = data.get("set_warehouse",      "")
         set_from_warehouse = data.get("set_from_warehouse", "")
-        price_list         = data.get("price_list",         "")  # ✅ correct (from Flutter)
+        price_list         = data.get("price_list",         "")
+        required_by        = data.get("required_by") or frappe.utils.add_days(frappe.utils.today(), 7)
+
+        if allowed_warehouses and set_warehouse and set_warehouse not in allowed_warehouses:
+            return {"success": False, "error": f"Access denied for warehouse '{set_warehouse}'"}
+        if allowed_warehouses and set_from_warehouse and set_from_warehouse not in allowed_warehouses:
+            return {"success": False, "error": f"Access denied for warehouse '{set_from_warehouse}'"}
 
         if not items:
             return {"success": False, "error": "Missing items"}
@@ -1007,7 +1155,6 @@ def create_material_request():
                 return {"success": False, "error": "Source warehouse required for Material Issue"}
             if not set_warehouse:
                 set_warehouse = set_from_warehouse
-
         else:
             if not set_warehouse:
                 set_warehouse = frappe.db.get_value(
@@ -1024,13 +1171,11 @@ def create_material_request():
             "items":                 [],
         }
 
-        if set_from_warehouse and purpose in [
-            "Material Transfer", "Material Issue", "Material Transfer for Manufacture"
-        ]:
+        if set_from_warehouse and purpose in ["Material Transfer", "Material Issue", "Material Transfer for Manufacture"]:
             doc_fields["set_from_warehouse"] = set_from_warehouse
 
-        if price_list:                                    # ✅ ':' ajouté
-            doc_fields["buying_price_list"] = price_list  # ✅ sans double 't'
+        if price_list:
+            doc_fields["buying_price_list"] = price_list
 
         doc = frappe.get_doc(doc_fields)
 
@@ -1077,12 +1222,18 @@ def create_material_request():
 @frappe.whitelist(allow_guest=True)
 def manage_material_request(name=None, action="submit"):
     try:
+        token = None
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
             if "application/json" in content_type:
                 data   = json.loads(frappe.request.data or "{}")
                 name   = name   or data.get("name")
                 action = data.get("action", action)
+                token  = data.get("token")
+
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
 
         if not name:
             return {"error": "Missing name"}
@@ -1090,7 +1241,14 @@ def manage_material_request(name=None, action="submit"):
         if not frappe.db.exists("Material Request", name):
             return {"error": f"Material Request '{name}' not found"}
 
-        doc = frappe.get_doc("Material Request", name, ignore_permissions=True)
+        doc = frappe.get_doc("Material Request", name)
+
+        # Check document-level permissions
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+        if allowed_companies and doc.company and doc.company not in allowed_companies:
+            return {"error": "Access denied for this Material Request (Company restriction)"}
+        if allowed_warehouses and doc.set_warehouse and doc.set_warehouse not in allowed_warehouses:
+            return {"error": "Access denied for this Material Request (Warehouse restriction)"}
 
         if action == "submit":
             if doc.docstatus == 1:
@@ -1132,11 +1290,17 @@ def manage_material_request(name=None, action="submit"):
 @frappe.whitelist(allow_guest=True)
 def create_stock_entry_from_mr(name=None):
     try:
+        token = None
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
             if "application/json" in content_type:
-                data = json.loads(frappe.request.data or "{}")
-                name = name or data.get("name")
+                data  = json.loads(frappe.request.data or "{}")
+                name  = name or data.get("name")
+                token = data.get("token")
+
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
 
         if not name:
             return {"error": "Missing Material Request name"}
@@ -1144,7 +1308,12 @@ def create_stock_entry_from_mr(name=None):
         if not frappe.db.exists("Material Request", name):
             return {"error": f"Material Request '{name}' not found"}
 
-        mr = frappe.get_doc("Material Request", name, ignore_permissions=True)
+        mr = frappe.get_doc("Material Request", name)
+
+        # Validate permission rules
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+        if allowed_companies and mr.company and mr.company not in allowed_companies:
+            return {"error": "Access denied for this Material Request"}
 
         if mr.docstatus != 1:
             return {"error": "Material Request must be submitted first"}
@@ -1192,9 +1361,21 @@ def create_stock_entry_from_mr(name=None):
 @frappe.whitelist(allow_guest=True)
 def get_warehouses(token=None, company=None):
     try:
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
+
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+
         filters = {"is_group": 0, "disabled": 0}
+
         if company:
             filters["company"] = company
+        elif allowed_companies:
+            filters["company"] = ["in", allowed_companies]
+
+        if allowed_warehouses:
+            filters["name"] = ["in", allowed_warehouses]
 
         warehouses = frappe.get_all(
             "Warehouse",
@@ -1209,6 +1390,40 @@ def get_warehouses(token=None, company=None):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_warehouses error")
         return {"error": str(e)}
+    
+
+################################################################################
+######################  Get Companies Function #################################
+################################################################################
+
+@frappe.whitelist(allow_guest=True)
+def get_companies(token=None):
+    try:
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
+
+        allowed_companies, allowed_warehouses = get_user_permissions(user)
+
+        filters = {}
+
+        # If restrictions exist, filter by allowed companies. Otherwise, fetch all.
+        if allowed_companies:
+            filters["name"] = ["in", allowed_companies]
+
+        companies = frappe.get_all(
+            "Company",
+            filters=filters,
+            fields=["name", "company_name", "default_currency"],
+            order_by="company_name asc",
+            ignore_permissions=True,
+        )
+
+        return {"companies": companies}
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_companies error")
+        return {"error": str(e)}    
 
 
 ################################################################################
@@ -1218,6 +1433,10 @@ def get_warehouses(token=None, company=None):
 @frappe.whitelist(allow_guest=True)
 def get_price_lists(token=None):
     try:
+        user = get_user_from_sid(token)
+        if not user:
+            return {"error": "Invalid session"}
+
         price_lists = frappe.get_all(
             "Price List",
             filters={"enabled": 1},
