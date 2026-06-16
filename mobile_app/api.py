@@ -766,8 +766,8 @@ def create_sales_order():
         )
         price_list = (customer_data.get("default_price_list") if customer_data else None) or "Public - Alger"
 
-        company    = "OPTILENS ALGER"
-        default_wh = frappe.db.get_value("Warehouse", {"company": company, "is_group": 0}, "name")
+        company   = "OPTILENS ALGER"   
+        warehouse = "Magasins - OA"    
 
         so = frappe.get_doc({
             "doctype":          "Sales Order",
@@ -796,7 +796,7 @@ def create_sales_order():
                 "qty":           float(it.get("qty") or 1),
                 "rate":          float(rate),
                 "uom":           uom,
-                "warehouse":     default_wh or "Magasins - OA",
+                "warehouse":     warehouse,   # ✅ Toujours "Magasins - OA"
                 "delivery_date": so.delivery_date
             })
 
