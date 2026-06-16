@@ -761,21 +761,23 @@ def create_sales_order():
         if not customer_id:
             return {"status": "error", "message": f"Customer '{code_envoye}' not found in ERPNext"}
 
-        customer_data = frappe.db.get_value(
-            "Customer", customer_id, "default_price_list", as_dict=True
-        )
-        price_list = (customer_data.get("default_price_list") if customer_data else None) or "Public - Alger"
 
-        company   = "OPTILENS ALGER"   
-        warehouse = "Magasins - OA"    
+        price_list = frappe.db.get_value(
+            "Customer", customer_id, "default_price_list"
+        ) or "Public - Alger"
+
+        company   = "OPTILENS ALGER"
+        warehouse = "Magasins - OA"
 
         so = frappe.get_doc({
-            "doctype":          "Sales Order",
-            "customer":         customer_id,
-            "company":          company,
-            "transaction_date": frappe.utils.today(),
-            "delivery_date":    frappe.utils.add_days(frappe.utils.today(), 2),
-            "items":            []
+            "doctype":             "Sales Order",
+            "customer":            customer_id,
+            "company":             company,
+            "selling_price_list":  price_list,  
+            "price_list_currency": "DZD",
+            "transaction_date":    frappe.utils.today(),
+            "delivery_date":       frappe.utils.add_days(frappe.utils.today(), 2),
+            "items":               []
         })
 
         for it in items:
@@ -787,16 +789,23 @@ def create_sales_order():
                 "Item Price",
                 {"item_code": item_code, "price_list": price_list, "selling": 1},
                 "price_list_rate"
-            ) or 0.0
+            )
+            if not rate and price_list != "Public - Alger":
+                rate = frappe.db.get_value(
+                    "Item Price",
+                    {"item_code": item_code, "price_list": "Public - Alger", "selling": 1},
+                    "price_list_rate"
+                )
+            rate = float(rate or 0.0)
 
             uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
 
             so.append("items", {
                 "item_code":     item_code,
                 "qty":           float(it.get("qty") or 1),
-                "rate":          float(rate),
+                "rate":          rate,
                 "uom":           uom,
-                "warehouse":     warehouse,   # ✅ Toujours "Magasins - OA"
+                "warehouse":     warehouse,
                 "delivery_date": so.delivery_date
             })
 
@@ -804,7 +813,11 @@ def create_sales_order():
         so.submit()
         frappe.db.commit()
 
-        return {"status": "success", "order_id": so.name}
+        return {
+            "status":     "success",
+            "order_id":   so.name,
+            "price_list": price_list  
+        }
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Mobile Order Error")
