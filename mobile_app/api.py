@@ -53,6 +53,12 @@ def get_allowed_companies_and_warehouses():
     return [c.get("name") for c in companies], [w.get("name") for w in warehouses]
 
 
+STOCK_ENTRY_MR_TYPES = (
+    "Material Transfer",
+    "Material Issue",
+)
+
+
 ################################################################################
 ############################## Hello World Function ############################
 ################################################################################
@@ -1100,7 +1106,7 @@ def create_material_request():
         data               = json.loads(frappe.request.data)
         token              = data.get("token")
         items              = data.get("items")
-        purpose            = data.get("purpose", "Material Transfer")
+        purpose            = data.get("purpose") or "Material Transfer"
 
         if not authenticate_employee(token):
             return {"success": False, "error": "Invalid session"}
@@ -1128,10 +1134,13 @@ def create_material_request():
                 return {"success": False, "error": "Target warehouse required for Material Transfer"}
 
         elif purpose == "Material Issue":
-            if not set_from_warehouse:
+            source_wh = set_from_warehouse or set_warehouse
+            if not source_wh:
                 return {"success": False, "error": "Source warehouse required for Material Issue"}
-            if not set_warehouse:
-                set_warehouse = set_from_warehouse
+            # ERPNext uses set_warehouse as the issue source
+            set_from_warehouse = source_wh
+            set_warehouse = source_wh
+
         else:
             if not set_warehouse:
                 warehouses = frappe.get_list(
@@ -1166,13 +1175,16 @@ def create_material_request():
                 continue
 
             uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
-            doc.append("items", {
+            item_row = {
                 "item_code":     item_code,
                 "qty":           float(it.get("qty") or 1),
                 "uom":           uom,
                 "warehouse":     it.get("warehouse") or set_warehouse,
                 "schedule_date": required_by,
-            })
+            }
+            if purpose == "Material Transfer":
+                item_row["from_warehouse"] = it.get("from_warehouse") or set_from_warehouse
+            doc.append("items", item_row)
 
         if not doc.items:
             return {"success": False, "error": "No valid items found"}
@@ -1288,14 +1300,34 @@ def create_stock_entry_from_mr(name=None):
 
         if mr.docstatus != 1:
             return {"error": "Material Request must be submitted first"}
-        if mr.material_request_type != "Material Transfer":
-            return {"error": "Only Material Transfer type can create a Stock Entry"}
-        if mr.status in ["Transferred", "Received", "Stopped"]:
+        if mr.material_request_type not in STOCK_ENTRY_MR_TYPES:
+            return {
+                "error": (
+                    f"Material Request type '{mr.material_request_type}' "
+                    "cannot create a Stock Entry"
+                )
+            }
+        if mr.status in ["Transferred", "Received", "Issued", "Stopped"]:
             return {"error": f"Material Request already {mr.status}"}
 
         from erpnext.stock.doctype.material_request.material_request import make_stock_entry
 
         se = make_stock_entry(name)
+
+        if not se.items:
+            return {"error": "No remaining quantity to create a Stock Entry"}
+
+        if mr.material_request_type == "Material Issue":
+            source_wh = mr.set_from_warehouse or mr.set_warehouse
+            se.from_warehouse = source_wh
+            se.to_warehouse = None
+            for row in se.items:
+                row.s_warehouse = source_wh
+                row.t_warehouse = None
+
+        if hasattr(se, "material_request_ref"):
+            se.material_request_ref = name
+
         se.insert()
         frappe.db.commit()
 
@@ -1311,13 +1343,15 @@ def create_stock_entry_from_mr(name=None):
             })
 
         return {
-            "success":        True,
-            "stock_entry_id": se.name,
-            "mr_name":        name,
-            "from_warehouse": se.from_warehouse or "",
-            "to_warehouse":   se.to_warehouse   or "",
-            "items_count":    len(se.items),
-            "items":          items,
+            "success":          True,
+            "stock_entry_id":   se.name,
+            "mr_name":          name,
+            "purpose":          se.purpose or "",
+            "stock_entry_type": se.stock_entry_type or "",
+            "from_warehouse":   se.from_warehouse or "",
+            "to_warehouse":     se.to_warehouse   or "",
+            "items_count":      len(se.items),
+            "items":            items,
         }
 
     except frappe.PermissionError:
