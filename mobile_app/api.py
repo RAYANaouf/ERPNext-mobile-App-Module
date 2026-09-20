@@ -1384,3 +1384,219 @@ def get_price_lists(token=None):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_price_lists error")
         return {"error": str(e)}
+
+
+################################################################################
+######################  Get Stock Summary Function #############################
+################################################################################
+# Example:
+# curl -G "http://192.168.100.20:8000/api/method/mobile_app.api.get_stock_summary" \
+#   --data-urlencode "token={{sid}}" \
+#   --data-urlencode "warehouse=" \
+#   --data-urlencode "company=OPTILENS ALGER" \
+#   --data-urlencode "search_text=" \
+#   --data-urlencode "qty_filter=positive" \
+#   --data-urlencode "include_low_stock_only=0" \
+#   --data-urlencode "limit=20" \
+#   --data-urlencode "offset=0"
+# qty_filter: positive | all | negative
+# (aliases: only_in_stock=1 → positive, only_negative=1 → negative)
+
+@frappe.whitelist(allow_guest=True)
+def get_stock_summary(
+    token=None,
+    warehouse=None,
+    search_text=None,
+    company=None,
+    limit=20,
+    offset=0,
+    qty_filter=None,
+    only_in_stock=1,
+    only_negative=0,
+    include_low_stock_only=0,
+):
+    """
+    Stock overview for the employee app: quantities from Bin + Item,
+    low-stock flags from Item Reorder. No prices / monetary values.
+    Qty sign filter is applied server-side (SQL) before summary + pagination.
+    Auth: token = SID (same pattern as get_last_stock_entries / get_warehouses).
+    """
+    try:
+        if not authenticate_employee(token):
+            return {"error": "Invalid session"}
+
+        limit = int(limit or 20)
+        offset = int(offset or 0)
+        only_in_stock = int(only_in_stock if only_in_stock is not None else 1)
+        only_negative = int(only_negative or 0)
+        include_low_stock_only = int(include_low_stock_only or 0)
+
+        warehouse = (warehouse or "").strip()
+        company = (company or "").strip()
+        search_text = (search_text or "").strip()
+        is_search = bool(search_text)
+
+        # Resolve qty sign filter (100% server-side)
+        resolved_qty_filter = (qty_filter or "").strip().lower()
+        if resolved_qty_filter not in ("positive", "all", "negative"):
+            if only_negative:
+                resolved_qty_filter = "negative"
+            elif only_in_stock:
+                resolved_qty_filter = "positive"
+            else:
+                resolved_qty_filter = "all"
+
+        # Warehouses the current user is allowed to see (Role + User Permission)
+        wh_filters = {"is_group": 0, "disabled": 0}
+        if company:
+            wh_filters["company"] = company
+
+        try:
+            allowed_wh_rows = frappe.get_list(
+                "Warehouse",
+                filters=wh_filters,
+                fields=["name"],
+                limit_page_length=5000,
+            )
+        except frappe.PermissionError:
+            return {"error": "Access denied"}
+
+        allowed_warehouses = [r.get("name") for r in allowed_wh_rows if r.get("name")]
+
+        if warehouse:
+            if warehouse not in allowed_warehouses:
+                return {"error": "Access denied"}
+            target_warehouses = [warehouse]
+        else:
+            target_warehouses = allowed_warehouses
+
+        empty_response = {
+            "success": True,
+            "warehouse": warehouse,
+            "company": company,
+            "summary": {
+                "total_items": 0,
+                "total_qty": 0,
+                "low_stock_count": 0,
+            },
+            "items": [],
+            "is_search": is_search,
+            "limit": limit,
+            "offset": offset,
+            "has_more": False,
+        }
+
+        if not target_warehouses:
+            return empty_response
+
+        conditions = ["b.warehouse IN %(warehouses)s"]
+        values = {"warehouses": tuple(target_warehouses)}
+
+        if resolved_qty_filter == "positive":
+            conditions.append("b.actual_qty > 0")
+        elif resolved_qty_filter == "negative":
+            conditions.append("b.actual_qty < 0")
+        # qty_filter=all → no sign filter on qty
+
+        if is_search:
+            conditions.append("(b.item_code LIKE %(search)s OR i.item_name LIKE %(search)s)")
+            values["search"] = f"%{search_text}%"
+
+        where_sql = " AND ".join(conditions)
+
+        # All matching bins (no N+1): Bin + Item in one query
+        bins = frappe.db.sql(
+            f"""
+            SELECT
+                b.item_code AS item_code,
+                COALESCE(i.item_name, '') AS item_name,
+                b.warehouse AS warehouse,
+                COALESCE(b.actual_qty, 0) AS qty,
+                COALESCE(i.stock_uom, 'Nos') AS uom
+            FROM `tabBin` b
+            INNER JOIN `tabItem` i ON i.name = b.item_code
+            WHERE {where_sql}
+              AND IFNULL(i.disabled, 0) = 0
+            ORDER BY i.item_name ASC, b.warehouse ASC
+            """,
+            values,
+            as_dict=True,
+        )
+
+        item_codes = list({row.get("item_code") for row in bins if row.get("item_code")})
+
+        # Reorder levels in one query (warehouse-specific preferred)
+        reorder_by_wh = {}
+        reorder_any = {}
+        if item_codes:
+            reorders = frappe.get_all(
+                "Item Reorder",
+                filters={"parent": ["in", item_codes]},
+                fields=["parent", "warehouse", "warehouse_reorder_level"],
+            )
+            for r in reorders:
+                parent = r.get("parent")
+                level = flt(r.get("warehouse_reorder_level") or 0)
+                wh = (r.get("warehouse") or "").strip()
+                if not parent:
+                    continue
+                if wh:
+                    reorder_by_wh[(parent, wh)] = level
+                else:
+                    reorder_any[parent] = level
+
+        items_all = []
+        for row in bins:
+            item_code = row.get("item_code") or ""
+            wh = row.get("warehouse") or ""
+            qty = flt(row.get("qty") or 0)
+            reorder_level = flt(
+                reorder_by_wh.get((item_code, wh), reorder_any.get(item_code, 0))
+            )
+            is_low_stock = bool(qty <= reorder_level) if reorder_level > 0 else False
+
+            if include_low_stock_only and not is_low_stock:
+                continue
+
+            items_all.append({
+                "item_code": item_code,
+                "item_name": row.get("item_name") or "",
+                "warehouse": wh,
+                "qty": qty,
+                "uom": row.get("uom") or "Nos",
+                "is_low_stock": is_low_stock,
+                "reorder_level": reorder_level,
+            })
+
+        total_items = len(items_all)
+        total_qty = sum(flt(i["qty"]) for i in items_all)
+        low_stock_count = sum(1 for i in items_all if i["is_low_stock"])
+
+        page = items_all[offset: offset + limit]
+        has_more = (offset + limit) < total_items
+
+        return {
+            "success": True,
+            "warehouse": warehouse,
+            "company": company,
+            "summary": {
+                "total_items": total_items,
+                "total_qty": total_qty,
+                "low_stock_count": low_stock_count,
+            },
+            "items": page,
+            "is_search": is_search,
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+        }
+
+    except frappe.PermissionError:
+        return {"error": "Access denied"}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_stock_summary error")
+        return {"error": str(e)}
+
+
+# Employee ToDo APIs — also available as mobile_app.employee_tasks.*
+from mobile_app.employee_tasks import get_my_tasks, get_task_detail, update_my_task_status  # noqa: E402,F401
