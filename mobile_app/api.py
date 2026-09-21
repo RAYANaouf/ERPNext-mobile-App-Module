@@ -1634,3 +1634,6 @@ def get_stock_summary(
 
 # Employee ToDo APIs — also available as mobile_app.employee_tasks.*
 from mobile_app.employee_tasks import get_my_tasks, get_task_detail, update_my_task_status  # noqa: E402,F401
+
+# Employee fiche de poste — also available as mobile_app.employee_job_profile.*
+from mobile_app.employee_job_profile import get_my_job_profile  # noqa: E402,F401
