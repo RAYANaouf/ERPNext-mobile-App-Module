@@ -1632,8 +1632,13 @@ def get_stock_summary(
         return {"error": str(e)}
 
 
-# Employee ToDo APIs — also available as mobile_app.employee_tasks.*
+# Employee Task APIs and legacy ToDo compatibility — mobile_app.employee_tasks.*
 from mobile_app.employee_tasks import (  # noqa: E402,F401
+    create_task,
+    get_task,
+    get_task_options,
+    get_tasks,
+    update_task,
     get_my_tasks,
     get_task_detail,
     create_todo,
@@ -1643,3 +1648,21 @@ from mobile_app.employee_tasks import (  # noqa: E402,F401
 
 # Employee fiche de poste — also available as mobile_app.employee_job_profile.*
 from mobile_app.employee_job_profile import get_my_job_profile  # noqa: E402,F401
+
+# Commande de Manque / Facture Acheteur — also available as mobile_app.manque.*
+from mobile_app.manque import (  # noqa: E402,F401
+    cancel_facture_acheteur,
+    create_commande_de_manque,
+    create_facture_acheteur,
+    create_manque_customer,
+    get_buyers,
+    get_suppliers,
+    get_commande_de_manque_detail,
+    get_commandes_de_manque,
+    get_facture_acheteur_detail,
+    get_factures_acheteur,
+    manage_commande_de_manque,
+    pay_facture_acheteur,
+    save_facture_acheteur_draft,
+    submit_facture_acheteur,
+)
