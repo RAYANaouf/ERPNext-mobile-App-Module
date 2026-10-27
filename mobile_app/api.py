@@ -1648,3 +1648,12 @@ from mobile_app.employee_tasks import (  # noqa: E402,F401
 
 # Employee fiche de poste — also available as mobile_app.employee_job_profile.*
 from mobile_app.employee_job_profile import get_my_job_profile  # noqa: E402,F401
+
+# Existing ISO 9001 Activity Report mobile adapter.
+from mobile_app.activity_reports import (  # noqa: E402,F401
+    get_activity_reports,
+    get_activity_report,
+    create_activity_report,
+    update_activity_report,
+    get_activity_report_options,
+)
