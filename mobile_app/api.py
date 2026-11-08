@@ -1657,3 +1657,10 @@ from mobile_app.activity_reports import (  # noqa: E402,F401
     update_activity_report,
     get_activity_report_options,
 )
+
+# ERPNext support Issue mobile API
+from mobile_app.issues import get_issues, get_issue, create_issue, reply_to_issue  # noqa: E402,F401
+from mobile_app.issues import create_task_from_issue  # noqa: E402,F401
+from mobile_app.issues import get_issue_options  # noqa: E402,F401
+from mobile_app.issues import get_issue_users  # noqa: E402,F401
+from mobile_app.issues import update_issue_status  # noqa: E402,F401

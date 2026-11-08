@@ -11,8 +11,8 @@ from frappe.desk.search import search_link
 DOCTYPE = "Activity Report"
 TABLES = {
     "attendance_list": ("Activity Report Attendee", ("employee", "present")),
-    "done_list": ("Activity Report Simple Item", ("description",)),
-    "issue_list": ("Activity Report Simple Item", ("description",)),
+    "done_list": ("Activity Report Simple Item", ("description", "user")),
+    "issue_list": ("Activity Report Simple Item", ("description", "user")),
     "task_list": ("Activity Report Task Link", ("task_link", "description", "responsible_employee", "deadline", "status")),
 }
 SCALARS = ("title", "doc_type", "date", "process_link")
@@ -113,6 +113,9 @@ def _serialize(doc):
     result["modified"] = str(doc.modified)
     for field, (_, allowed) in TABLES.items():
         result[field] = [{"name": row.name, **{k: row.get(k) or "" for k in allowed}} for row in doc.get(field) or []]
+    for field in ("done_list", "issue_list"):
+        for row in result[field]:
+            row["user_name"] = (frappe.db.get_value("User", row["user"], "full_name") or row["user"]) if row["user"] else ""
     for row in result["attendance_list"]:
         row["present"] = bool(row["present"])
         row["employee_name"] = frappe.db.get_value("Employee", row["employee"], "employee_name") or row["employee"]
@@ -239,6 +242,10 @@ def _apply(doc, payload):
                 values["description"] = str(values.get("description") or "").strip()
                 if not values["description"]:
                     frappe.throw("Action description is required")
+            if field in ("done_list", "issue_list"):
+                # Older clients send descriptions only; keep the selected user.
+                values["user"] = (row["user"] if "user" in row else old.get("user") if old else None) or None
+                _link("User", values["user"], previous=old.get("user") if old else None)
             if field == "attendance_list":
                 employee = values.get("employee")
                 if not employee:

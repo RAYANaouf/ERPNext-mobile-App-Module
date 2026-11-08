@@ -523,12 +523,12 @@ def get_assignable_users(token=None, search_text=None, limit=20):
 
 _TASK_FIELDS = [
     "name", "subject", "description", "status", "priority", "progress",
-    "exp_start_date", "exp_end_date", "project", "company", "department",
+    "exp_start_date", "exp_end_date", "project", "company", "department", "type", "issue",
     "owner", "creation", "modified", "is_group", "is_template",
 ]
 _TASK_EDIT_FIELDS = (
     "subject", "description", "company", "project", "exp_start_date",
-    "exp_end_date", "priority", "progress", "status",
+    "exp_end_date", "priority", "progress", "status", "type", "issue",
 )
 _TASK_FINISHED = ("Completed", "Cancelled", "Template")
 
@@ -774,6 +774,12 @@ def _task_values(data, *, creating=False):
     for field in ("company", "project"):
         if field in values:
             values[field] = values[field] or None
+    if values.get("type"):
+        if not frappe.db.exists("Task Type", values["type"]):
+            frappe.throw("Invalid Task Type")
+    if values.get("issue"):
+        issue_doc = frappe.get_doc("Issue", values["issue"])
+        issue_doc.check_permission("read")
     if "priority" in values and values["priority"] not in _task_choices("priority"):
         frappe.throw("Invalid Task priority")
     if "status" in values and values["status"] not in _task_choices("status"):
@@ -888,3 +894,6 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
         except frappe.PermissionError:
             result["companies"] = []
     return result
+
+
+
