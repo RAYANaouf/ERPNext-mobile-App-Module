@@ -1637,6 +1637,7 @@ from mobile_app.employee_tasks import (  # noqa: E402,F401
     create_task,
     get_task,
     get_task_options,
+    get_task_photo,
     get_tasks,
     update_task,
     get_my_tasks,
@@ -1664,3 +1665,4 @@ from mobile_app.issues import create_task_from_issue  # noqa: E402,F401
 from mobile_app.issues import get_issue_options  # noqa: E402,F401
 from mobile_app.issues import get_issue_users  # noqa: E402,F401
 from mobile_app.issues import update_issue_status  # noqa: E402,F401
+from mobile_app.issues import add_issue_photo, get_issue_photo  # noqa: E402,F401

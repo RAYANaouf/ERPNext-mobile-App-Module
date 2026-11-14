@@ -1,6 +1,14 @@
 """Permission-aware mobile API for ERPNext support Issues."""
 import frappe
 
+from mobile_app.photo_attachments import (
+    attach_photo,
+    list_photos,
+    photo_limit,
+    photo_preview,
+    read_photo_upload,
+)
+
 def _user(token):
     from mobile_app.api import authenticate_employee
     user = authenticate_employee(token)
@@ -24,24 +32,28 @@ def _issue_assignees(name):
         "User", filters={"name": ["in", users]}, fields=["name", "full_name"]
     )} if users else {}
     return [{"email": user, "full_name": labels.get(user) or user} for user in users]
-def _api(methods):
+def _api(methods, *, writes=True, accepts_photo=False):
     def deco(fn):
         @frappe.whitelist(allow_guest=True, methods=methods)
         def run(*args, **kwargs):
             savepoint = None
+            req = getattr(frappe.local, "request", None)
+            multipart = accepts_photo and req and req.mimetype == "multipart/form-data"
             try:
-                req = getattr(frappe.local, "request", None)
                 body = req.get_json(silent=True) if req and req.is_json else None
                 values = dict(body or {})
                 values.update(kwargs)
                 if args:
                     values.setdefault("name", args[0])
                 _user(values.get("token"))
-                if "POST" in methods:
+                if writes and "POST" in methods and not multipart:
                     savepoint = "mobile_issue_mutation"
                     frappe.db.savepoint(savepoint)
                 return fn(**values)
             except Exception as exc:
+                # File rollback hooks run on a full request rollback, not a savepoint.
+                if multipart:
+                    raise
                 if savepoint:
                     frappe.db.rollback(save_point=savepoint)
                 if isinstance(exc, (frappe.PermissionError, frappe.AuthenticationError)):
@@ -69,9 +81,36 @@ def get_issues(search_text="", status="All", limit=20, offset=0, **kwargs):
 def get_issue(name=None, **kwargs):
     doc = _doc(name)
     comms = frappe.get_all("Communication", filters={"reference_doctype": "Issue", "reference_name": name, "communication_type": "Communication"}, fields=["name", "sender", "content", "creation", "sent_or_received"], order_by="creation asc", limit_page_length=200)
-    return {"issue": _data(doc), "communications": [dict(x) for x in comms], "assignees": _issue_assignees(name), "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(), "can_write": frappe.has_permission("Issue", "write", doc=doc)}
+    can_write = doc.has_permission("write")
+    return {
+        "issue": _data(doc),
+        "communications": [dict(x) for x in comms],
+        "assignees": _issue_assignees(name),
+        "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
+        "can_write": can_write,
+        "photos": list_photos(doc),
+        "photo_max_bytes": photo_limit() if can_write else 0,
+    }
 
-@_api(["POST"])
+
+@_api(["POST"], writes=False)
+def get_issue_photo(name=None, file_id=None, thumbnail=True, **kwargs):
+    doc = _doc(name)
+    return photo_preview(doc, file_id, thumbnail)
+
+
+@_api(["POST"], accepts_photo=True)
+def add_issue_photo(name=None, **kwargs):
+    doc = _doc(name)
+    doc.check_permission("write")
+    photo = read_photo_upload()
+    if photo is None:
+        frappe.throw(frappe._("Select a photo to attach."))
+    attach_photo(doc, photo)
+    return {"photos": list_photos(doc)}
+
+
+@_api(["POST"], accepts_photo=True)
 def create_issue(subject=None, description=None, priority=None, issue_type=None, status=None, assignees=None, **kwargs):
     frappe.has_permission("Issue", "create", throw=True)
     if not (subject or "").strip(): frappe.throw("Subject is required")
@@ -80,6 +119,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
     if issue_type: doc.issue_type = issue_type
     if status: doc.status = status
 
+    photo = read_photo_upload()
     doc.insert()
     if isinstance(assignees, str):
         assignees = frappe.parse_json(assignees)
@@ -93,6 +133,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
         from frappe.desk.form import assign_to
         assign_to.add({"doctype": "Issue", "name": doc.name, "assign_to": frappe.as_json(users),
                        "description": "Issue " + doc.name, "date": frappe.utils.today()})
+    attach_photo(doc, photo)
     return {"issue": _data(doc), "assignees": _issue_assignees(doc.name)}
 
 
@@ -128,6 +169,7 @@ def get_issue_options(kind="metadata", search_text="", **kwargs):
         frappe.throw("Access denied", frappe.PermissionError)
     return {
         "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
+        "photo_max_bytes": photo_limit() if frappe.has_permission("Issue", "create") else 0,
         "issue_types": [x.name for x in frappe.get_list("Issue Type", fields=["name"], order_by="name asc", limit_page_length=100)],
         "priorities": [x.name for x in frappe.get_list("Issue Priority", fields=["name"], order_by="name asc", limit_page_length=100)],
     }
