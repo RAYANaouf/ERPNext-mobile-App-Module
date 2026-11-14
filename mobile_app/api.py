@@ -85,13 +85,14 @@ def login(email: str, password: str):
         login_manager.post_login()
 
         sid = frappe.session.sid
-        full_name = frappe.db.get_value("User", email, "full_name")
+        user = frappe.session.user
+        full_name = frappe.db.get_value("User", user, "full_name")
         allowed_companies, allowed_warehouses = get_allowed_companies_and_warehouses()
 
         return {
             "user": {
                 "sid":                sid,
-                "email":              frappe.session.user,
+                "email":              user,
                 "name":               full_name,
                 "allowed_companies":  allowed_companies,
                 "allowed_warehouses": allowed_warehouses,
@@ -101,6 +102,14 @@ def login(email: str, password: str):
     except frappe.AuthenticationError:
         frappe.clear_messages()
         return {"ok": False, "error": "Invalid credentials"}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def get_my_user_name(token=None):
+    user = authenticate_employee(token)
+    if not user or user == "Guest" or not frappe.get_cached_value("User", user, "enabled"):
+        return {"error": "Invalid session"}
+    return {"name": frappe.get_cached_value("User", user, "full_name") or ""}
 
 
 ################################################################################
