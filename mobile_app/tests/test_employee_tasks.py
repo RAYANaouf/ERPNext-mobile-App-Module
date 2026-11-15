@@ -58,6 +58,26 @@ class TestEmployeeTasks(unittest.TestCase):
         self.assertEqual(result["task"]["status"], "Working")
         self.assertEqual(result["task"]["progress"], 35)
 
+    def test_task_type_search_and_edit_preserve_project(self):
+        first = f"{self.prefix}-maintenance"
+        second = f"{self.prefix}-operations"
+        for name in (first, second):
+            frappe.get_doc({"doctype": "Task Type", "name": name}).insert()
+        project = frappe.get_doc({"doctype": "Project", "project_name": self.prefix}).insert()
+
+        options = tasks.get_task_options(token=self.author, kind="types", search_text=first)
+        self.assertEqual(options.get("types"), [first], options)
+        task = self._create(project=project.name, type=first)
+        detail = tasks.get_task(token=self.author, name=task["name"])
+        self.assertEqual(detail["task"]["type"], first)
+        self.assertEqual(detail["task"]["project"], project.name)
+
+        for task_type in (second, ""):
+            updated = tasks.update_task(token=self.author, name=task["name"], type=task_type)
+            self.assertNotIn("error", updated, updated)
+            self.assertEqual(updated["task"]["type"], task_type)
+            self.assertEqual(updated["task"]["project"], project.name)
+
     def test_completion_preserves_history_for_each_assignee(self):
         task = self._create()
         result = tasks.update_task(token=self.author, name=task["name"], status="Completed")

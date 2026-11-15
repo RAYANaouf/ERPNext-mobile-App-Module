@@ -678,6 +678,7 @@ def _serialize_task(doc, assignments=None):
         "exp_start_date": _task_date(doc.exp_start_date),
         "exp_end_date": due,
         "project": doc.project or "",
+        "type": doc.type or "",
         "company": doc.company or "",
         "department": doc.department or "",
         "owner": doc.owner or "",
@@ -800,7 +801,7 @@ def _task_values(data, *, creating=False):
     for field in ("exp_start_date", "exp_end_date"):
         if field in values:
             values[field] = _task_date(values[field]) or None
-    for field in ("company", "project"):
+    for field in ("company", "project", "type"):
         if field in values:
             values[field] = values[field] or None
     if values.get("type"):
@@ -896,7 +897,7 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
         frappe.throw("Access denied", frappe.PermissionError)
     from frappe.desk.search import search_link
 
-    if kind not in ("all", "users", "projects", "companies"):
+    if kind not in ("all", "users", "projects", "companies", "types"):
         frappe.throw("Invalid Task options kind")
     limit, _ = _task_pagination(limit)
     search_text = (search_text or "").strip()
@@ -912,6 +913,18 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
             "User", filters={"name": ["in", names]}, fields=["name", "full_name"]
         )} if names else {}
         result["users"] = [{"name": n, "full_name": metadata.get(n) or n} for n in names]
+    if kind == "types":
+        try:
+            types = frappe.get_list(
+                "Task Type",
+                fields=["name"],
+                filters={"name": ["like", f"%{search_text}%"]} if search_text else {},
+                limit_page_length=limit,
+                order_by="name asc",
+            )
+            result["types"] = [row.name for row in types]
+        except frappe.PermissionError:
+            result["types"] = []
     if kind in ("all", "projects"):
         try:
             result["projects"] = frappe.get_list(
