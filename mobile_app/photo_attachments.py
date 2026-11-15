@@ -98,19 +98,21 @@ def photo_upload_limits():
     }
 
 
-def read_photo_uploads():
+def read_photo_uploads(*, required=True, reserved_bytes=0):
     request = getattr(frappe.local, "request", None)
     if not request or request.mimetype != "multipart/form-data":
         return []
 
     uploads = request.files.getlist("photo")
+    if not uploads and not required:
+        return []
     if not uploads or any(not upload.filename for upload in uploads):
         frappe.throw(frappe._("Select a photo to attach."))
     if len(uploads) > _MAX_PHOTOS_PER_UPLOAD:
         frappe.throw(frappe._("Select at most {0} photos per upload.").format(_MAX_PHOTOS_PER_UPLOAD))
 
     limits = photo_upload_limits()
-    remaining = limits["photo_batch_max_bytes"]
+    remaining = limits["photo_batch_max_bytes"] - reserved_bytes
     per_photo_limit = limits["photo_max_bytes"]
     photos = []
     for upload in uploads:
@@ -122,9 +124,13 @@ def read_photo_uploads():
             )
         if len(content) > remaining:
             batch_limit = limits["photo_batch_max_bytes"]
+            message = (
+                frappe._("The attachments exceed the combined limit of {0} MB.")
+                if reserved_bytes
+                else frappe._("The selected photos exceed the combined limit of {0} MB.")
+            )
             frappe.throw(
-                frappe._("The selected photos exceed the combined limit of {0} MB.")
-                .format(f"{batch_limit / 1048576:g}")
+                message.format(f"{batch_limit / 1048576:g}")
             )
         photos.append(_validate_photo(upload.filename, content))
         remaining -= len(content)
@@ -148,8 +154,8 @@ def _validate_photo(filename, content):
     return (stem or "photo") + extension, content
 
 
-def attach_photos(doc, photos):
-    for filename, content in photos:
+def attach_private_files(doc, attachments):
+    for filename, content in attachments:
         frappe.get_doc({
             "doctype": "File",
             "attached_to_doctype": doc.doctype,

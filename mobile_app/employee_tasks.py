@@ -29,11 +29,17 @@ from functools import wraps
 from inspect import signature
 
 from mobile_app.photo_attachments import (
-    attach_photos,
+    attach_private_files,
     list_photos,
     photo_upload_limits,
     photo_preview,
-    read_photo_uploads,
+)
+from mobile_app.task_voice import (
+    detach_voices,
+    list_voice_ids,
+    read_task_attachments,
+    read_voice,
+    voice_upload_limit,
 )
 
 
@@ -544,14 +550,14 @@ _TASK_FINISHED = ("Completed", "Cancelled", "Template")
 def _task_api(*, write=False, methods=None):
     """Authenticate once and roll back the complete mutation on a handled error."""
     def decorate(fn):
-        accepts_photo = fn.__name__ in ("create_task", "update_task")
+        accepts_attachments = fn.__name__ in ("create_task", "update_task")
 
         @frappe.whitelist(allow_guest=True, methods=methods or (["POST"] if write else ["GET"]))
         @wraps(fn)
         def endpoint(*args, **kwargs):
             savepoint = None
             request = getattr(frappe.local, "request", None)
-            multipart = accepts_photo and request and request.mimetype == "multipart/form-data"
+            multipart = accepts_attachments and request and request.mimetype == "multipart/form-data"
             try:
                 data = {}
                 # Content-Type alone does not imply a body (Flutter GETs also
@@ -773,6 +779,7 @@ def get_tasks(token=None, scope="mine", status="Active", date=None,
 def _task_detail(doc):
     task = _serialize_task(doc)
     task["photos"] = list_photos(doc)
+    task["voice_ids"] = list_voice_ids(doc)
     return task
 
 
@@ -790,6 +797,13 @@ def get_task_photo(token=None, name=None, file_id=None, thumbnail=True, **kwargs
         frappe.throw(frappe._("Task is required."))
     doc = frappe.get_doc("Task", name.strip())
     return photo_preview(doc, file_id, thumbnail)
+
+
+@_task_api(methods=["POST"])
+def get_task_voice(token=None, name=None, file_id=None, **kwargs):
+    if not isinstance(name, str) or not name.strip():
+        frappe.throw(frappe._("Task is required."))
+    return read_voice(frappe.get_doc("Task", name.strip()), file_id)
 
 
 def _task_values(data, *, creating=False):
@@ -859,11 +873,11 @@ def create_task(token=None, **kwargs):
     values = _task_values(kwargs, creating=True)
     values["status"] = "Open"
     users = _task_users(kwargs.get("assignees", []))
-    photos = read_photo_uploads()
+    attachments = read_task_attachments()
     doc = frappe.get_doc({"doctype": "Task", **values})
     doc.insert()
     _task_sync_assignments(doc, users)
-    attach_photos(doc, photos)
+    attach_private_files(doc, attachments)
     doc.reload()
     return {"success": True, "task": _task_detail(doc)}
 
@@ -876,7 +890,7 @@ def update_task(token=None, name=None, modified=None, **kwargs):
     if modified and str(doc.modified) != str(modified):
         frappe.throw("Task has changed. Refresh before saving.")
     values = _task_values(kwargs)
-    photos = read_photo_uploads()
+    attachments = read_task_attachments()
     if "assignees" in kwargs:
         users = _task_users(kwargs["assignees"])
         if doc.status in ("Completed", "Cancelled"):
@@ -885,7 +899,9 @@ def update_task(token=None, name=None, modified=None, **kwargs):
         doc.reload()
     doc.update(values)
     doc.save()
-    attach_photos(doc, photos)
+    if "removed_voice_ids" in kwargs:
+        detach_voices(doc, kwargs["removed_voice_ids"])
+    attach_private_files(doc, attachments)
     doc.reload()
     return {"success": True, "task": _task_detail(doc)}
 
@@ -905,6 +921,9 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
               "priorities": _task_choices("priority"),
               "can_create": bool(frappe.has_permission("Task", "create")),
               **(photo_upload_limits() if kind == "all" else {"photo_max_bytes": 0})}
+    if kind == "all":
+        result["voice_max_bytes"] = voice_upload_limit(result["photo_batch_max_bytes"])
+        result["can_remove_voice"] = True
     if kind in ("all", "users"):
         links = search_link(doctype="User", txt=search_text, page_length=limit,
                             reference_doctype="Task", filters={"enabled": 1}) or []

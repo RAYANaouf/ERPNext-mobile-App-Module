@@ -235,6 +235,117 @@ class TestEmployeeTasks(unittest.TestCase):
         finally:
             frappe.local.request = previous_request
 
+    @staticmethod
+    def _voice_recording():
+        import wave
+        from io import BytesIO
+
+        audio = BytesIO()
+        with wave.open(audio, "wb") as recording:
+            recording.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+            recording.writeframes(b"\x00\x01" * 160)
+        return audio.getvalue()
+
+    def test_create_task_accepts_voice_without_photos(self):
+        from io import BytesIO
+
+        from werkzeug.test import EnvironBuilder
+        from werkzeug.wrappers import Request
+
+        content = self._voice_recording()
+        previous_request = getattr(frappe.local, "request", None)
+        try:
+            frappe.local.request = Request(EnvironBuilder(method="POST", data={
+                "voice": (BytesIO(content), "recording.wav"),
+            }).get_environ())
+            with patch.object(tasks, "attach_private_files") as attach:
+                response = tasks.create_task(token=self.author, subject=self.prefix)
+            self.assertTrue(response["success"])
+            doc, attachments = attach.call_args.args
+            self.assertEqual(doc.name, response["task"]["name"])
+            self.assertEqual(attachments, [("note-vocale.wav", content)])
+        finally:
+            frappe.local.request = previous_request
+
+    def test_saved_voice_requires_read_access_to_its_task(self):
+        task = self._create()
+        other_task = self._create()
+        frappe.set_user("Administrator")
+        frappe.share.add("Task", task["name"], self.reader, read=1, write=0)
+        recordings = (
+            ("wav", self._voice_recording()),
+            ("ogg", b"OggS" + self.prefix.encode()),
+        )
+        files = []
+        try:
+            for extension, content in recordings:
+                file = frappe.get_doc({
+                    "doctype": "File",
+                    "attached_to_doctype": "Task",
+                    "attached_to_name": task["name"],
+                    "file_name": f"{self.prefix}.{extension}",
+                    "is_private": 1,
+                    "content": content,
+                }).insert()
+                files.append(file.name)
+            detail = tasks.get_task(token=self.reader, name=task["name"])
+            self.assertFalse(detail["task"]["can_write"])
+            self.assertCountEqual(detail["task"]["voice_ids"], files)
+            for file_id, (extension, content) in zip(files, recordings, strict=True):
+                with self.subTest(extension=extension):
+                    audio = tasks.get_task_voice(token=self.reader, name=task["name"], file_id=file_id)
+                    self.assertEqual(audio.mimetype, f"audio/{extension}")
+                    self.assertEqual(audio.get_data(), content)
+                    self.assertEqual(audio.headers["Cache-Control"], "private, no-store")
+                    denied = tasks.get_task_voice(token=self.author, name=other_task["name"], file_id=file_id)
+                    self.assertEqual(denied, {"error": "Access denied"})
+        finally:
+            frappe.set_user("Administrator")
+            for file_id in files:
+                frappe.delete_doc("File", file_id)
+
+    def test_saving_task_detaches_only_selected_voice_atomically(self):
+        import json
+        from pathlib import Path
+
+        task = self._create()
+        other_task = self._create()
+        frappe.set_user("Administrator")
+        files = []
+        try:
+            for linked_task, suffix in [(task, "first"), (task, "second"), (other_task, "unrelated")]:
+                files.append(frappe.get_doc({
+                    "doctype": "File",
+                    "attached_to_doctype": "Task",
+                    "attached_to_name": linked_task["name"],
+                    "file_name": f"{self.prefix}-{suffix}.ogg",
+                    "is_private": 1,
+                    "content": f"OggS{self.prefix}-{suffix}".encode(),
+                }).insert())
+            first, second, unrelated = files
+            request = {"token": self.author, "name": task["name"]}
+
+            denied = tasks.update_task(**request, removed_voice_ids=[first.name, unrelated.name])
+            self.assertEqual(denied, {"error": "Access denied"})
+            with patch.object(tasks, "attach_private_files", side_effect=ValueError("Upload failed")):
+                failed = tasks.update_task(**request, removed_voice_ids=[first.name])
+            self.assertEqual(failed, {"error": "Upload failed"})
+            detail = tasks.get_task(**request)
+            self.assertCountEqual(detail["task"]["voice_ids"], [first.name, second.name])
+
+            saved = tasks.update_task(**request, removed_voice_ids=json.dumps([first.name]))
+            self.assertEqual(saved["task"]["voice_ids"], [second.name])
+            first.reload()
+            self.assertFalse(first.attached_to_name)
+            self.assertTrue(first.is_private)
+            self.assertTrue(Path(first.get_full_path()).is_file())
+            denied = tasks.get_task_voice(**request, file_id=first.name)
+            self.assertEqual(denied, {"error": "Access denied"})
+        finally:
+            frappe.set_user("Administrator")
+            for file in files:
+                frappe.delete_doc("File", file.name)
+
     def test_mobile_get_with_json_header_and_no_body(self):
         """The shared Flutter client sends Content-Type JSON even on GET."""
         from frappe.handler import execute_cmd

@@ -2,7 +2,7 @@
 import frappe
 
 from mobile_app.photo_attachments import (
-    attach_photos,
+    attach_private_files,
     list_photos,
     photo_upload_limits,
     photo_preview,
@@ -106,7 +106,7 @@ def add_issue_photo(name=None, **kwargs):
     photos = read_photo_uploads()
     if not photos:
         frappe.throw(frappe._("Select a photo to attach."))
-    attach_photos(doc, photos)
+    attach_private_files(doc, photos)
     return {"photos": list_photos(doc)}
 
 
@@ -133,7 +133,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
         from frappe.desk.form import assign_to
         assign_to.add({"doctype": "Issue", "name": doc.name, "assign_to": frappe.as_json(users),
                        "description": "Issue " + doc.name, "date": frappe.utils.today()})
-    attach_photos(doc, photos)
+    attach_private_files(doc, photos)
     return {"issue": _data(doc), "assignees": _issue_assignees(doc.name)}
 
 

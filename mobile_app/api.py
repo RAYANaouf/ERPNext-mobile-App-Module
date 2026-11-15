@@ -1647,6 +1647,7 @@ from mobile_app.employee_tasks import (  # noqa: E402,F401
     get_task,
     get_task_options,
     get_task_photo,
+    get_task_voice,
     get_tasks,
     update_task,
     get_my_tasks,
