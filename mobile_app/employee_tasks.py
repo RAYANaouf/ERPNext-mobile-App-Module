@@ -29,11 +29,11 @@ from functools import wraps
 from inspect import signature
 
 from mobile_app.photo_attachments import (
-    attach_photo,
+    attach_photos,
     list_photos,
-    photo_limit,
+    photo_upload_limits,
     photo_preview,
-    read_photo_upload,
+    read_photo_uploads,
 )
 
 
@@ -858,11 +858,11 @@ def create_task(token=None, **kwargs):
     values = _task_values(kwargs, creating=True)
     values["status"] = "Open"
     users = _task_users(kwargs.get("assignees", []))
-    photo = read_photo_upload()
+    photos = read_photo_uploads()
     doc = frappe.get_doc({"doctype": "Task", **values})
     doc.insert()
     _task_sync_assignments(doc, users)
-    attach_photo(doc, photo)
+    attach_photos(doc, photos)
     doc.reload()
     return {"success": True, "task": _task_detail(doc)}
 
@@ -875,7 +875,7 @@ def update_task(token=None, name=None, modified=None, **kwargs):
     if modified and str(doc.modified) != str(modified):
         frappe.throw("Task has changed. Refresh before saving.")
     values = _task_values(kwargs)
-    photo = read_photo_upload()
+    photos = read_photo_uploads()
     if "assignees" in kwargs:
         users = _task_users(kwargs["assignees"])
         if doc.status in ("Completed", "Cancelled"):
@@ -884,7 +884,7 @@ def update_task(token=None, name=None, modified=None, **kwargs):
         doc.reload()
     doc.update(values)
     doc.save()
-    attach_photo(doc, photo)
+    attach_photos(doc, photos)
     doc.reload()
     return {"success": True, "task": _task_detail(doc)}
 
@@ -903,7 +903,7 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
     result = {"success": True, "statuses": _task_choices("status"),
               "priorities": _task_choices("priority"),
               "can_create": bool(frappe.has_permission("Task", "create")),
-              "photo_max_bytes": photo_limit() if kind == "all" else 0}
+              **(photo_upload_limits() if kind == "all" else {"photo_max_bytes": 0})}
     if kind in ("all", "users"):
         links = search_link(doctype="User", txt=search_text, page_length=limit,
                             reference_doctype="Task", filters={"enabled": 1}) or []

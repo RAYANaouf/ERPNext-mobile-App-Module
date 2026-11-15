@@ -7,6 +7,8 @@ import frappe
 
 _PREVIEW_FORMATS = {"JPEG", "PNG", "WEBP", "GIF"}
 _PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_MAX_PHOTOS_PER_UPLOAD = 12
+_MULTIPART_OVERHEAD = 64 * 1024
 
 
 def _is_local_photo(file_url):
@@ -85,26 +87,52 @@ def photo_preview(doc, file_id, thumbnail):
     )
 
 
-def photo_limit():
+def photo_upload_limits():
     from frappe.core.api.file import get_max_file_size
 
-    return min(get_max_file_size(), 10 * 1024 * 1024)
+    batch_limit = max(0, min(get_max_file_size(), 25 * 1024 * 1024) - _MULTIPART_OVERHEAD)
+    return {
+        "photo_max_bytes": min(batch_limit, 10 * 1024 * 1024),
+        "photo_batch_max_bytes": batch_limit,
+        "photo_max_count": _MAX_PHOTOS_PER_UPLOAD,
+    }
 
 
-def read_photo_upload():
+def read_photo_uploads():
     request = getattr(frappe.local, "request", None)
     if not request or request.mimetype != "multipart/form-data":
-        return None
+        return []
 
-    from PIL import Image
-
-    upload = request.files.get("photo")
-    if not upload or not upload.filename:
+    uploads = request.files.getlist("photo")
+    if not uploads or any(not upload.filename for upload in uploads):
         frappe.throw(frappe._("Select a photo to attach."))
-    limit = photo_limit()
-    content = upload.stream.read(limit + 1)
-    if len(content) > limit:
-        frappe.throw(frappe._("The photo exceeds the {0} MB limit.").format(f"{limit / 1048576:g}"))
+    if len(uploads) > _MAX_PHOTOS_PER_UPLOAD:
+        frappe.throw(frappe._("Select at most {0} photos per upload.").format(_MAX_PHOTOS_PER_UPLOAD))
+
+    limits = photo_upload_limits()
+    remaining = limits["photo_batch_max_bytes"]
+    per_photo_limit = limits["photo_max_bytes"]
+    photos = []
+    for upload in uploads:
+        content = upload.stream.read(min(per_photo_limit, remaining) + 1)
+        if len(content) > per_photo_limit:
+            frappe.throw(
+                frappe._("The photo exceeds the {0} MB limit.")
+                .format(f"{per_photo_limit / 1048576:g}")
+            )
+        if len(content) > remaining:
+            batch_limit = limits["photo_batch_max_bytes"]
+            frappe.throw(
+                frappe._("The selected photos exceed the combined limit of {0} MB.")
+                .format(f"{batch_limit / 1048576:g}")
+            )
+        photos.append(_validate_photo(upload.filename, content))
+        remaining -= len(content)
+    return photos
+
+
+def _validate_photo(filename, content):
+    from PIL import Image
 
     extensions = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
     try:
@@ -116,19 +144,17 @@ def read_photo_upload():
     except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
         frappe.throw(frappe._("Select a valid JPG, PNG or WebP photo."))
 
-    stem = PurePath(upload.filename.replace("\\", "/")).stem.strip()[:100]
+    stem = PurePath(filename.replace("\\", "/")).stem.strip()[:100]
     return (stem or "photo") + extension, content
 
 
-def attach_photo(doc, photo):
-    if photo is None:
-        return
-    filename, content = photo
-    frappe.get_doc({
-        "doctype": "File",
-        "attached_to_doctype": doc.doctype,
-        "attached_to_name": doc.name,
-        "file_name": filename,
-        "is_private": 1,
-        "content": content,
-    }).insert()
+def attach_photos(doc, photos):
+    for filename, content in photos:
+        frappe.get_doc({
+            "doctype": "File",
+            "attached_to_doctype": doc.doctype,
+            "attached_to_name": doc.name,
+            "file_name": filename,
+            "is_private": 1,
+            "content": content,
+        }).insert()

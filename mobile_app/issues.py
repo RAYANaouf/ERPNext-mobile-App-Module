@@ -2,11 +2,11 @@
 import frappe
 
 from mobile_app.photo_attachments import (
-    attach_photo,
+    attach_photos,
     list_photos,
-    photo_limit,
+    photo_upload_limits,
     photo_preview,
-    read_photo_upload,
+    read_photo_uploads,
 )
 
 def _user(token):
@@ -89,7 +89,7 @@ def get_issue(name=None, **kwargs):
         "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
         "can_write": can_write,
         "photos": list_photos(doc),
-        "photo_max_bytes": photo_limit() if can_write else 0,
+        **(photo_upload_limits() if can_write else {"photo_max_bytes": 0}),
     }
 
 
@@ -103,10 +103,10 @@ def get_issue_photo(name=None, file_id=None, thumbnail=True, **kwargs):
 def add_issue_photo(name=None, **kwargs):
     doc = _doc(name)
     doc.check_permission("write")
-    photo = read_photo_upload()
-    if photo is None:
+    photos = read_photo_uploads()
+    if not photos:
         frappe.throw(frappe._("Select a photo to attach."))
-    attach_photo(doc, photo)
+    attach_photos(doc, photos)
     return {"photos": list_photos(doc)}
 
 
@@ -119,7 +119,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
     if issue_type: doc.issue_type = issue_type
     if status: doc.status = status
 
-    photo = read_photo_upload()
+    photos = read_photo_uploads()
     doc.insert()
     if isinstance(assignees, str):
         assignees = frappe.parse_json(assignees)
@@ -133,7 +133,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
         from frappe.desk.form import assign_to
         assign_to.add({"doctype": "Issue", "name": doc.name, "assign_to": frappe.as_json(users),
                        "description": "Issue " + doc.name, "date": frappe.utils.today()})
-    attach_photo(doc, photo)
+    attach_photos(doc, photos)
     return {"issue": _data(doc), "assignees": _issue_assignees(doc.name)}
 
 
@@ -169,7 +169,8 @@ def get_issue_options(kind="metadata", search_text="", **kwargs):
         frappe.throw("Access denied", frappe.PermissionError)
     return {
         "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
-        "photo_max_bytes": photo_limit() if frappe.has_permission("Issue", "create") else 0,
+        **(photo_upload_limits() if frappe.has_permission("Issue", "create")
+           else {"photo_max_bytes": 0}),
         "issue_types": [x.name for x in frappe.get_list("Issue Type", fields=["name"], order_by="name asc", limit_page_length=100)],
         "priorities": [x.name for x in frappe.get_list("Issue Priority", fields=["name"], order_by="name asc", limit_page_length=100)],
     }
