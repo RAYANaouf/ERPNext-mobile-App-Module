@@ -1,4 +1,4 @@
-"""Store and read Task voice recordings as private files."""
+"""Store and read document voice recordings as private files."""
 
 import wave
 from io import BytesIO
@@ -21,7 +21,7 @@ def voice_upload_limit(batch_limit):
     return min(batch_limit, _MAX_VOICE_BYTES)
 
 
-def read_task_attachments():
+def read_voice_attachments():
     request = getattr(frappe.local, "request", None)
     if not request or request.mimetype != "multipart/form-data":
         return []
@@ -115,7 +115,7 @@ def detach_voices(doc, file_ids):
 
     for file in files:
         file.add_comment_in_reference_doc("Attachment Removed", file.file_name)
-        # Keep the private File available to its owner. Only its link to this Task is removed.
+        # Keep the private File available to its owner. Only its link to the document is removed.
         file.db_set({
             "attached_to_doctype": None,
             "attached_to_name": None,

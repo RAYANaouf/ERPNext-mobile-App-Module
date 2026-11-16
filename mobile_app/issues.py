@@ -8,6 +8,19 @@ from mobile_app.photo_attachments import (
     photo_preview,
     read_photo_uploads,
 )
+from mobile_app.task_voice import (
+    detach_voices,
+    list_voice_ids,
+    read_voice,
+    read_voice_attachments,
+    voice_upload_limit,
+)
+
+
+def _issue_attachment_limits():
+    limits = photo_upload_limits()
+    return {**limits, "voice_max_bytes": voice_upload_limit(limits["photo_batch_max_bytes"])}
+
 
 def _user(token):
     from mobile_app.api import authenticate_employee
@@ -32,13 +45,13 @@ def _issue_assignees(name):
         "User", filters={"name": ["in", users]}, fields=["name", "full_name"]
     )} if users else {}
     return [{"email": user, "full_name": labels.get(user) or user} for user in users]
-def _api(methods, *, writes=True, accepts_photo=False):
+def _api(methods, *, writes=True, accepts_attachments=False):
     def deco(fn):
         @frappe.whitelist(allow_guest=True, methods=methods)
         def run(*args, **kwargs):
             savepoint = None
             req = getattr(frappe.local, "request", None)
-            multipart = accepts_photo and req and req.mimetype == "multipart/form-data"
+            multipart = accepts_attachments and req and req.mimetype == "multipart/form-data"
             try:
                 body = req.get_json(silent=True) if req and req.is_json else None
                 values = dict(body or {})
@@ -89,7 +102,9 @@ def get_issue(name=None, **kwargs):
         "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
         "can_write": can_write,
         "photos": list_photos(doc),
-        **(photo_upload_limits() if can_write else {"photo_max_bytes": 0}),
+        "voice_ids": list_voice_ids(doc),
+        "can_remove_voice": can_write,
+        **(_issue_attachment_limits() if can_write else {"photo_max_bytes": 0}),
     }
 
 
@@ -99,7 +114,7 @@ def get_issue_photo(name=None, file_id=None, thumbnail=True, **kwargs):
     return photo_preview(doc, file_id, thumbnail)
 
 
-@_api(["POST"], accepts_photo=True)
+@_api(["POST"], accepts_attachments=True)
 def add_issue_photo(name=None, **kwargs):
     doc = _doc(name)
     doc.check_permission("write")
@@ -110,7 +125,22 @@ def add_issue_photo(name=None, **kwargs):
     return {"photos": list_photos(doc)}
 
 
-@_api(["POST"], accepts_photo=True)
+@_api(["POST"], writes=False)
+def get_issue_voice(name=None, file_id=None, **kwargs):
+    return read_voice(_doc(name), file_id)
+
+
+@_api(["POST"], accepts_attachments=True)
+def update_issue_voice(name=None, removed_voice_ids=None, **kwargs):
+    doc = _doc(name, "write")
+    attachments = read_voice_attachments()
+    if removed_voice_ids is not None:
+        detach_voices(doc, removed_voice_ids)
+    attach_private_files(doc, attachments)
+    return {"voice_ids": list_voice_ids(doc)}
+
+
+@_api(["POST"], accepts_attachments=True)
 def create_issue(subject=None, description=None, priority=None, issue_type=None, status=None, assignees=None, **kwargs):
     frappe.has_permission("Issue", "create", throw=True)
     if not (subject or "").strip(): frappe.throw("Subject is required")
@@ -119,7 +149,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
     if issue_type: doc.issue_type = issue_type
     if status: doc.status = status
 
-    photos = read_photo_uploads()
+    attachments = read_voice_attachments()
     doc.insert()
     if isinstance(assignees, str):
         assignees = frappe.parse_json(assignees)
@@ -133,7 +163,7 @@ def create_issue(subject=None, description=None, priority=None, issue_type=None,
         from frappe.desk.form import assign_to
         assign_to.add({"doctype": "Issue", "name": doc.name, "assign_to": frappe.as_json(users),
                        "description": "Issue " + doc.name, "date": frappe.utils.today()})
-    attach_private_files(doc, photos)
+    attach_private_files(doc, attachments)
     return {"issue": _data(doc), "assignees": _issue_assignees(doc.name)}
 
 
@@ -163,16 +193,24 @@ def create_task_from_issue(token=None, name=None, task_type=None, assignees=None
 
 
 
+def _issue_option_names(doctype):
+    try:
+        return frappe.get_list(doctype, pluck="name", order_by="name asc", limit_page_length=100)
+    except frappe.PermissionError:
+        frappe.clear_last_message()
+        return []
+
+
 @_api(["GET"])
 def get_issue_options(kind="metadata", search_text="", **kwargs):
     if not (frappe.has_permission("Issue", "read") or frappe.has_permission("Issue", "create")):
         frappe.throw("Access denied", frappe.PermissionError)
     return {
         "statuses": (frappe.get_meta("Issue").get_field("status").options or "Open").splitlines(),
-        **(photo_upload_limits() if frappe.has_permission("Issue", "create")
+        **(_issue_attachment_limits() if frappe.has_permission("Issue", "create")
            else {"photo_max_bytes": 0}),
-        "issue_types": [x.name for x in frappe.get_list("Issue Type", fields=["name"], order_by="name asc", limit_page_length=100)],
-        "priorities": [x.name for x in frappe.get_list("Issue Priority", fields=["name"], order_by="name asc", limit_page_length=100)],
+        "issue_types": _issue_option_names("Issue Type"),
+        "priorities": _issue_option_names("Issue Priority"),
     }
 
 

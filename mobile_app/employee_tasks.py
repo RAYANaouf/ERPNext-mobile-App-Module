@@ -37,7 +37,7 @@ from mobile_app.photo_attachments import (
 from mobile_app.task_voice import (
     detach_voices,
     list_voice_ids,
-    read_task_attachments,
+    read_voice_attachments,
     read_voice,
     voice_upload_limit,
 )
@@ -873,7 +873,7 @@ def create_task(token=None, **kwargs):
     values = _task_values(kwargs, creating=True)
     values["status"] = "Open"
     users = _task_users(kwargs.get("assignees", []))
-    attachments = read_task_attachments()
+    attachments = read_voice_attachments()
     doc = frappe.get_doc({"doctype": "Task", **values})
     doc.insert()
     _task_sync_assignments(doc, users)
@@ -890,7 +890,7 @@ def update_task(token=None, name=None, modified=None, **kwargs):
     if modified and str(doc.modified) != str(modified):
         frappe.throw("Task has changed. Refresh before saving.")
     values = _task_values(kwargs)
-    attachments = read_task_attachments()
+    attachments = read_voice_attachments()
     if "assignees" in kwargs:
         users = _task_users(kwargs["assignees"])
         if doc.status in ("Completed", "Cancelled"):

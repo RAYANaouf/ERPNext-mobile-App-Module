@@ -1676,3 +1676,4 @@ from mobile_app.issues import get_issue_options  # noqa: E402,F401
 from mobile_app.issues import get_issue_users  # noqa: E402,F401
 from mobile_app.issues import update_issue_status  # noqa: E402,F401
 from mobile_app.issues import add_issue_photo, get_issue_photo  # noqa: E402,F401
+from mobile_app.issues import get_issue_voice, update_issue_voice  # noqa: E402,F401
