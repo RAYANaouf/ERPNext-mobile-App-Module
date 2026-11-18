@@ -29,16 +29,31 @@ def read_voice_attachments():
     uploads = request.files.getlist("voice")
     if not uploads:
         return read_photo_uploads()
-    if len(uploads) != 1 or not uploads[0].filename:
-        frappe.throw(frappe._("Attach one voice recording at a time."))
-
-    max_bytes = voice_upload_limit(photo_upload_limits()["photo_batch_max_bytes"])
+    batch_limit = photo_upload_limits()["photo_batch_max_bytes"]
+    max_bytes = voice_upload_limit(batch_limit)
     if not max_bytes:
         frappe.throw(frappe._("Voice recordings are disabled for this site."))
-    content = uploads[0].stream.read(max_bytes + 1)
-    if len(content) > max_bytes:
-        frappe.throw(frappe._("The voice recording exceeds the upload limit."))
 
+    voices = []
+    remaining = batch_limit
+    for index, upload in enumerate(uploads, start=1):
+        if not upload.filename:
+            frappe.throw(frappe._("Select a valid WAV voice recording."))
+        content = upload.stream.read(min(max_bytes, remaining) + 1)
+        if len(content) > max_bytes:
+            frappe.throw(frappe._("The voice recording exceeds the upload limit."))
+        if len(content) > remaining:
+            frappe.throw(frappe._("The attachments exceed the combined upload limit."))
+        _validate_voice(content)
+        filename = f"note-vocale-{index}.wav" if len(uploads) > 1 else "note-vocale.wav"
+        voices.append((filename, content))
+        remaining -= len(content)
+
+    photos = read_photo_uploads(required=False, reserved_bytes=batch_limit - remaining)
+    return [*voices, *photos]
+
+
+def _validate_voice(content):
     try:
         with wave.open(BytesIO(content), "rb") as audio:
             frame_count = audio.getnframes()
@@ -47,9 +62,6 @@ def read_voice_attachments():
                 raise wave.Error("Empty or incomplete recording")
     except (EOFError, wave.Error):
         frappe.throw(frappe._("Select a valid WAV voice recording."))
-
-    photos = read_photo_uploads(required=False, reserved_bytes=len(content))
-    return [("note-vocale.wav", content), *photos]
 
 
 def list_voice_ids(doc):

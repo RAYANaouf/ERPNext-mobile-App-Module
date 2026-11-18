@@ -1,6 +1,7 @@
 """Permission-aware mobile API for ERPNext support Issues."""
 import frappe
 
+from mobile_app.auth import authenticate_employee
 from mobile_app.photo_attachments import (
     attach_private_files,
     list_photos,
@@ -23,7 +24,6 @@ def _issue_attachment_limits():
 
 
 def _user(token):
-    from mobile_app.api import authenticate_employee
     user = authenticate_employee(token)
     if not user or user == "Guest" or not frappe.get_cached_value("User", user, "enabled"):
         frappe.throw("Invalid session", frappe.AuthenticationError)

@@ -5,11 +5,13 @@
 # Managers assign the fiche in Desk; mobile shows only the logged-in employee's fiche.
 #
 # Example:
-# curl -G "http://192.168.100.20:8000/api/method/mobile_app.api.get_my_job_profile" \
+# curl -G "/api/method/mobile_app.api.get_my_job_profile" \
 #   --data-urlencode "token={{sid}}"
 
 import frappe
 from frappe.utils import strip_html
+
+from mobile_app.auth import authenticate_employee
 
 
 JOB_DESCRIPTION_DOCTYPE = "Job description"
@@ -74,8 +76,6 @@ def get_my_job_profile(token=None):
     Auth: token = SID (same pattern as stock / tasks APIs).
     Read-only. The employee never sees another person's fiche.
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if not authenticate_employee(token):
             return {"error": "Invalid session"}

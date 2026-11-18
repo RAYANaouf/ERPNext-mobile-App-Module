@@ -8,6 +8,8 @@ from inspect import signature
 import frappe
 from frappe.desk.search import search_link
 
+from mobile_app.auth import authenticate_employee
+
 DOCTYPE = "Activity Report"
 TABLES = {
     "attendance_list": ("Activity Report Attendee", ("employee", "present")),
@@ -38,7 +40,6 @@ def _api(*, write=False):
                 supplied = signature(fn).bind_partial(*args, **kwargs).arguments
                 data.update(supplied.pop("kwargs", {}))
                 data.update({k: v for k, v in supplied.items() if v is not None})
-                from mobile_app.api import authenticate_employee
                 user = authenticate_employee(data.get("token"))
                 if not user or user == "Guest" or not frappe.get_cached_value("User", user, "enabled"):
                     return {"error": "Invalid session"}

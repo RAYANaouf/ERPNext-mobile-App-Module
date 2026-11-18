@@ -28,6 +28,7 @@ import math
 from functools import wraps
 from inspect import signature
 
+from mobile_app.auth import authenticate_employee
 from mobile_app.photo_attachments import (
     attach_private_files,
     list_photos,
@@ -86,8 +87,6 @@ def get_my_tasks(
     Same pattern as get_last_stock_entries: SID → set_user → get_list.
     Optional allocated_to filter (only returns rows the user is allowed to read).
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if not authenticate_employee(token):
             return {"error": "Invalid session"}
@@ -205,8 +204,6 @@ def get_task_detail(token=None, name=None):
     """
     Get one ToDo. Access controlled by ERPNext permissions (like Stock Entry detail).
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if not authenticate_employee(token):
             return {"error": "Invalid session"}
@@ -264,8 +261,6 @@ def create_todo(
     """
     Create a ToDo. Requires ToDo Create permission in ERPNext (like inserting a Stock Entry).
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
@@ -345,8 +340,6 @@ def update_my_task_status(name=None, status=None, token=None):
     Update ToDo status. Write permission enforced by ERPNext (like manage_stock_entry).
     Allowed status: Open, Closed.
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if frappe.request and frappe.request.method == "POST":
             content_type = frappe.request.headers.get("Content-Type", "")
@@ -414,8 +407,6 @@ def get_assignable_users(token=None, search_text=None, limit=20):
     List active Users for ToDo "Allocated To" — same source as Desk Link search.
     Requires ToDo create or read. Auth: token = SID.
     """
-    from mobile_app.api import authenticate_employee
-
     try:
         if not authenticate_employee(token):
             return {"error": "Invalid session"}
@@ -570,8 +561,6 @@ def _task_api(*, write=False, methods=None):
                 supplied = signature(fn).bind_partial(*args, **kwargs).arguments
                 data.update(supplied.pop("kwargs", {}))
                 data.update({k: v for k, v in supplied.items() if v is not None})
-                from mobile_app.api import authenticate_employee
-
                 user = authenticate_employee(data.get("token"))
                 if not user or user == "Guest":
                     return {"error": "Invalid session"}
@@ -780,6 +769,9 @@ def _task_detail(doc):
     task = _serialize_task(doc)
     task["photos"] = list_photos(doc)
     task["voice_ids"] = list_voice_ids(doc)
+    task["attachment_count"] = frappe.db.count(
+        "File", {"attached_to_doctype": doc.doctype, "attached_to_name": doc.name}
+    )
     return task
 
 
@@ -922,6 +914,7 @@ def get_task_options(token=None, kind="all", search_text=None, company=None, lim
               "can_create": bool(frappe.has_permission("Task", "create")),
               **(photo_upload_limits() if kind == "all" else {"photo_max_bytes": 0})}
     if kind == "all":
+        result["attachment_limit"] = frappe.utils.cint(frappe.get_meta("Task").max_attachments)
         result["voice_max_bytes"] = voice_upload_limit(result["photo_batch_max_bytes"])
         result["can_remove_voice"] = True
     if kind in ("all", "users"):

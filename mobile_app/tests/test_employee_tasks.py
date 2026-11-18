@@ -3,7 +3,6 @@ import unittest
 from unittest.mock import patch
 import frappe
 from frappe.utils import add_days, today
-from mobile_app import api
 from mobile_app import employee_tasks as tasks
 
 
@@ -17,7 +16,7 @@ class TestEmployeeTasks(unittest.TestCase):
         self.author = self._user("author", ["Projects User"])
         self.colleague = self._user("colleague", ["Projects User"])
         self.reader = self._user("reader", [])
-        self.auth = patch.object(api, "authenticate_employee", self._authenticate)
+        self.auth = patch.object(tasks, "authenticate_employee", self._authenticate)
         self.notify = patch("frappe.desk.form.assign_to.notify_assignment")
         self.auth.start()
         self.notify.start()
