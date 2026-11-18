@@ -1,7 +1,6 @@
 """Mobile customer profiles, access codes and complaints."""
 
 import hmac
-import json
 
 import frappe
 from frappe.rate_limiter import rate_limit
@@ -80,27 +79,40 @@ def change_customer_code(old_code=None, new_code=None):
         return {"success": False, "error": str(e)}
 
 
-def create_customer_complaint():
+def create_customer_complaint(description=None, date_reception=None, reference=None):
+    customer = customer_sessions.current_customer()
+    if not customer:
+        return {"error": "Invalid session"}
+    if not isinstance(description, str) or not description.strip():
+        return {"error": "Missing complaint description"}
+
+    receipt_date = date_reception or frappe.utils.today()
     try:
-        if frappe.request.method != "POST":
-            return {"error": "Method not allowed"}
-
-        data = json.loads(frappe.request.data)
-
-        doc = frappe.get_doc({
-            "doctype":                "reclamtion client",
-            "client":                 data.get("client"),
-            "date_reception":         data.get("date_reception") or frappe.utils.today(),
-            "documents_reference":    data.get("reference"),
-            "desciption_reclamation": data.get("description"),
-            "docstatus":              0
-        })
-
+        if frappe.db.exists("DocType", "reclamtion client"):
+            fields = {
+                "doctype": "reclamtion client",
+                "client": customer,
+                "date_reception": receipt_date,
+                "documents_reference": reference,
+                "desciption_reclamation": description,
+            }
+        else:
+            company = frappe.db.get_single_value("Global Defaults", "default_company")
+            if not company:
+                return {"error": "No default company configured for customer complaints"}
+            fields = {
+                "doctype": "Customer Complaint",
+                "source_type": "Client",
+                "company": company,
+                "customer": customer,
+                "receipt_date": receipt_date,
+                "reference_documents": reference,
+                "complaint_description": description,
+            }
+        doc = frappe.get_doc(fields)
         doc.insert(ignore_permissions=True)
-        frappe.db.commit()
-
         return {"message": "Success", "id": doc.name}
-
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Mobile Complaint Error")
-        return {"error": str(e)}
+    except Exception:
+        frappe.db.rollback()
+        frappe.log_error(title="Mobile Complaint Error", message=frappe.get_traceback())
+        return {"error": "Unable to create complaint"}

@@ -71,8 +71,6 @@ class TestCustomerInvoices(unittest.TestCase):
 
     def test_payment_only_includes_references_to_the_paying_customers_invoices(self):
         def get_all(doctype, filters, **kwargs):
-            if doctype == "Customer":
-                return [frappe._dict(name="customer-a")]
             if doctype == "Payment Entry":
                 self.assertEqual(filters, {"party_type": "Customer", "party": "customer-a", "docstatus": 1})
                 return [{"name": "PAY"}]
@@ -84,6 +82,6 @@ class TestCustomerInvoices(unittest.TestCase):
             return [{"name": "OWN", "status": "Paid"}]
 
         with patch.object(frappe, "get_all", side_effect=get_all):
-            result = billing.get_payments_by_customer_code("code-a")
+            result = billing.get_customer_payments()
         refs = result["payments"][0]["invoices_payed"]
         self.assertEqual([(r["invoice"], r["allocated_amount"]) for r in refs], [("OWN", 5)])

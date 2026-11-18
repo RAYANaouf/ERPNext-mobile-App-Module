@@ -99,23 +99,13 @@ def get_single_invoice_details(invoice_name=None):
         return {"error": "Unable to load invoice"}
 
 
-def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=None):
-    if not code:
-        return {"error": "Missing customer code"}
+def get_customer_payments(limit=20, offset=0, search_text=None):
+    customer_name = current_customer()
+    if not customer_name:
+        return {"error": "Invalid session"}
 
     limit  = int(limit)  if limit  else 20
     offset = int(offset) if offset else 0
-
-    customer = frappe.get_all(
-        "Customer",
-        filters={"custom_customer_code": code},
-        fields=["name"],
-        limit=1
-    )
-    if not customer:
-        return {"error": "Customer not found"}
-
-    customer_name = customer[0].name
 
     filters = {
         "party_type": "Customer",
@@ -131,7 +121,7 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
         "Payment Entry",
         filters=filters,
         fields=["name", "posting_date", "paid_amount", "payment_type", "mode_of_payment"],
-        order_by="posting_date desc",
+        order_by="posting_date desc, name desc",
         limit=20  if is_search else limit,
         start=0   if is_search else offset
     )
@@ -143,7 +133,8 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
     refs = frappe.get_all(
         "Payment Entry Reference",
-        filters={"parent": ["in", pe_names], "reference_doctype": "Sales Invoice"},
+        filters={"parenttype": "Payment Entry", "parentfield": "references",
+                 "parent": ["in", pe_names], "reference_doctype": "Sales Invoice"},
         fields=["parent", "reference_name", "allocated_amount",
                 "total_amount", "outstanding_amount"],
         order_by="parent desc"

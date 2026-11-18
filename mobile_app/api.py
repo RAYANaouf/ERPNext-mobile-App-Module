@@ -60,12 +60,13 @@ get_client_by_code = _mobile_method(customers.get_client_by_code)
 login_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.login_customer)
 logout_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customer_sessions.logout_customer)
 change_customer_code = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.change_customer_code)
-create_customer_complaint = _mobile_method(customers.create_customer_complaint)
+create_customer_complaint = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.create_customer_complaint)
 
 get_customer_invoices = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(billing.get_customer_invoices)
 get_invoices_by_customer_code = get_customer_invoices
 get_single_invoice_details = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(billing.get_single_invoice_details)
-get_payments_by_customer_code = _mobile_method(billing.get_payments_by_customer_code)
+get_customer_payments = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(billing.get_customer_payments)
+get_payments_by_customer_code = get_customer_payments
 
 create_sales_order = frappe.whitelist(allow_guest=True, methods=["POST"])(orders.create_sales_order)
 get_customer_orders = frappe.whitelist(allow_guest=True, methods=["GET"])(orders.get_customer_orders)
