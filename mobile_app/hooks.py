@@ -191,7 +191,7 @@ app_license = "mit"
 # Request Events
 # ----------------
 # before_request = ["mobile_app.utils.before_request"]
-# after_request = ["mobile_app.utils.after_request"]
+after_request = ["mobile_app.customer_sessions.protect_response"]
 
 # Job Events
 # ----------

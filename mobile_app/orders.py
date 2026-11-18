@@ -4,8 +4,13 @@ import json
 
 import frappe
 
+from mobile_app.customer_sessions import current_customer
+
 
 def create_sales_order():
+    customer_id = current_customer()
+    if not customer_id:
+        return {"error": "Invalid session"}
     try:
         data = None
 
@@ -19,21 +24,13 @@ def create_sales_order():
         if not data:
             data = frappe.form_dict
 
-        code_envoye = data.get("customer_code")
         items       = data.get("items")
 
-        if not code_envoye:
-            return {"status": "error", "message": "Missing customer_code"}
         if not items:
             return {"status": "error", "message": "Missing items"}
 
         if isinstance(items, str):
             items = json.loads(items)
-
-        customer_id = frappe.db.get_value("Customer", {"custom_customer_code": code_envoye}, "name")
-        if not customer_id:
-            return {"status": "error", "message": f"Customer '{code_envoye}' not found in ERPNext"}
-
 
         price_list = frappe.db.get_value(
             "Customer", customer_id, "default_price_list"
@@ -93,18 +90,17 @@ def create_sales_order():
         }
 
     except Exception as e:
+        frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), "Mobile Order Error")
-        return {"status": "error", "message": str(e)}
+        if isinstance(e, frappe.ValidationError):
+            return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "Unable to create order"}
 
 
-def get_customer_orders(customer_code):
-    if not customer_code:
-        return {"status": "error", "message": "Missing customer_code"}
-
-    customer_id = frappe.db.get_value("Customer", {"custom_customer_code": customer_code}, "name")
-
+def get_customer_orders():
+    customer_id = current_customer()
     if not customer_id:
-        return {"status": "error", "message": f"Customer '{customer_code}' not found"}
+        return {"error": "Invalid session"}
 
     orders = frappe.get_all(
         "Sales Order",
@@ -116,14 +112,16 @@ def get_customer_orders(customer_code):
 
 
 def get_order_details(order_id=None):
-    if not order_id:
-        order_id = frappe.form_dict.get('order_id')
-
-    if not order_id:
+    customer_id = current_customer()
+    if not customer_id:
+        return {"error": "Invalid session"}
+    if not isinstance(order_id, str) or not order_id:
         return {"status": "error", "message": "Missing order ID"}
 
     try:
-        doc = frappe.get_doc("Sales Order", order_id, ignore_permissions=True)
+        doc = frappe.get_doc("Sales Order", order_id)
+        if doc.customer != customer_id:
+            return {"status": "error", "message": "Order not found"}
 
         items_list = []
         for item in doc.items:
@@ -140,5 +138,6 @@ def get_order_details(order_id=None):
             "grand_total": doc.grand_total,
             "items":       items_list
         }
-    except Exception as e:
-        return {"status": "error", "message": f"Order not found: {str(e)}"}
+    except frappe.DoesNotExistError:
+        frappe.clear_last_message()
+        return {"status": "error", "message": "Order not found"}

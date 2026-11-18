@@ -2,7 +2,7 @@
 
 import frappe
 
-from mobile_app import auth, billing, catalog, communications, customers, material_requests, orders, stock
+from mobile_app import auth, billing, catalog, communications, customer_sessions, customers, material_requests, orders, stock
 from mobile_app.activity_reports import (
     create_activity_report,
     get_activity_report,
@@ -57,16 +57,18 @@ login = _mobile_method(auth.login)
 get_my_user_name = frappe.whitelist(allow_guest=True, methods=["POST"])(auth.get_my_user_name)
 
 get_client_by_code = _mobile_method(customers.get_client_by_code)
-change_customer_code = _mobile_method(customers.change_customer_code)
+login_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.login_customer)
+logout_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customer_sessions.logout_customer)
+change_customer_code = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.change_customer_code)
 create_customer_complaint = _mobile_method(customers.create_customer_complaint)
 
 get_invoices_by_customer_code = _mobile_method(billing.get_invoices_by_customer_code)
 get_single_invoice_details = _mobile_method(billing.get_single_invoice_details)
 get_payments_by_customer_code = _mobile_method(billing.get_payments_by_customer_code)
 
-create_sales_order = _mobile_method(orders.create_sales_order)
-get_customer_orders = _mobile_method(orders.get_customer_orders)
-get_order_details = _mobile_method(orders.get_order_details)
+create_sales_order = frappe.whitelist(allow_guest=True, methods=["POST"])(orders.create_sales_order)
+get_customer_orders = frappe.whitelist(allow_guest=True, methods=["GET"])(orders.get_customer_orders)
+get_order_details = frappe.whitelist(allow_guest=True, methods=["GET"])(orders.get_order_details)
 
 search_items = _mobile_method(catalog.search_items)
 get_items_by_customer_code = _mobile_method(catalog.get_items_by_customer_code)
