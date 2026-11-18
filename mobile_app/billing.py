@@ -2,24 +2,16 @@
 
 import frappe
 
+from mobile_app.customer_sessions import current_customer
 
-def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=None, status=None):
-    if not code:
-        return {"error": "Missing client code"}
+
+def get_customer_invoices(limit=20, offset=0, search_text=None, status=None):
+    customer_name = current_customer()
+    if not customer_name:
+        return {"error": "Invalid session"}
 
     limit  = int(limit)  if limit  else 20
     offset = int(offset) if offset else 0
-
-    customer = frappe.get_all(
-        "Customer",
-        filters={"custom_customer_code": code},
-        fields=["name"],
-        limit=1
-    )
-    if not customer:
-        return {"error": "Customer not found"}
-
-    customer_name = customer[0].name
 
     filters_sales = {"customer": customer_name}
     filters_pos   = {"customer": customer_name, "docstatus": 1}
@@ -54,7 +46,6 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=Non
     )
 
     return {
-        "customer_code":  code,
         "is_search":      is_search,
         "sales_invoices": sales_invoices,
         "pos_invoices":   pos_invoices
@@ -62,17 +53,25 @@ def get_invoices_by_customer_code(code=None, limit=20, offset=0, search_text=Non
 
 
 def get_single_invoice_details(invoice_name=None):
+    customer_name = current_customer()
+    if not customer_name:
+        return {"error": "Invalid session"}
+    if not isinstance(invoice_name, str) or not invoice_name.strip():
+        return {"error": "Missing invoice name"}
+
     try:
-        if not invoice_name:
-            return {"error": "Missing invoice name"}
-
-        invoice_type = "Sales Invoice"
-        if not frappe.db.exists(invoice_type, invoice_name):
-            invoice_type = "POS Invoice"
-            if not frappe.db.exists(invoice_type, invoice_name):
-                return {"error": "Invoice not found"}
-
-        doc = frappe.get_doc(invoice_type, invoice_name)
+        owner_filters = {"name": invoice_name, "customer": customer_name}
+        for invoice_type, filters in (
+            ("Sales Invoice", owner_filters),
+            ("POS Invoice", {**owner_filters, "docstatus": 1}),
+        ):
+            try:
+                doc = frappe.get_doc(invoice_type, filters)
+                break
+            except frappe.DoesNotExistError:
+                frappe.clear_last_message()
+        else:
+            return {"error": "Invoice not found"}
 
         items = []
         for item in doc.items:
@@ -95,9 +94,9 @@ def get_single_invoice_details(invoice_name=None):
             "items": items,
         }
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Invoice Detail Error")
-        return {"error": str(e)}
+        return {"error": "Unable to load invoice"}
 
 
 def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=None):
@@ -155,14 +154,16 @@ def get_payments_by_customer_code(code=None, limit=20, offset=0, search_text=Non
     if invoice_names:
         invoices = frappe.get_all(
             "Sales Invoice",
-            filters={"name": ["in", invoice_names]},
+            filters={"name": ["in", invoice_names], "customer": customer_name},
             fields=["name", "posting_date", "status", "grand_total", "outstanding_amount"],
         )
         invoice_map = {inv["name"]: inv for inv in invoices}
 
     refs_by_payment = {}
     for r in refs:
-        inv = invoice_map.get(r["reference_name"], {})
+        inv = invoice_map.get(r["reference_name"])
+        if inv is None:
+            continue
         refs_by_payment.setdefault(r["parent"], []).append({
             "invoice":              r["reference_name"],
             "allocated_amount":     r.get("allocated_amount"),

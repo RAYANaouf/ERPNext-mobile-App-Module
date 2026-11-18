@@ -1,4 +1,4 @@
-"""Short-lived, site-scoped credentials for mobile customer orders."""
+"""Short-lived, site-scoped credentials for the mobile customer API."""
 
 import hashlib
 import hmac

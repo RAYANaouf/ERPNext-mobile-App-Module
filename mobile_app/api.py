@@ -62,8 +62,9 @@ logout_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customer_
 change_customer_code = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.change_customer_code)
 create_customer_complaint = _mobile_method(customers.create_customer_complaint)
 
-get_invoices_by_customer_code = _mobile_method(billing.get_invoices_by_customer_code)
-get_single_invoice_details = _mobile_method(billing.get_single_invoice_details)
+get_customer_invoices = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(billing.get_customer_invoices)
+get_invoices_by_customer_code = get_customer_invoices
+get_single_invoice_details = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(billing.get_single_invoice_details)
 get_payments_by_customer_code = _mobile_method(billing.get_payments_by_customer_code)
 
 create_sales_order = frappe.whitelist(allow_guest=True, methods=["POST"])(orders.create_sales_order)
