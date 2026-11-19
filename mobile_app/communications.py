@@ -2,22 +2,13 @@
 
 import frappe
 
+from mobile_app.customer_sessions import current_customer
 
-def get_notification_by_customer_code(code=None):
-    if not code:
-        return {"error": "Missing client code"}
 
-    customer = frappe.get_all(
-        "Customer",
-        filters={"custom_customer_code": code},
-        fields=["name"],
-        limit=1
-    )
-
-    if not customer:
-        return {"error": "Customer not found"}
-
-    customer_name = customer[0].name
+def get_customer_notifications():
+    customer_name = current_customer()
+    if not customer_name:
+        return {"error": "Invalid session"}
 
     all_notification = frappe.get_all(
         "Mobile Notification",
@@ -28,17 +19,14 @@ def get_notification_by_customer_code(code=None):
     return {"notification": all_notification}
 
 
-def get_announcements_by_customer_code(code=None, limit=10, offset=0):
-    if not code:
-        return {"error": "Missing client code"}
+def get_customer_announcements(limit=10, offset=0):
+    customer_name = current_customer()
+    if not customer_name:
+        return {"error": "Invalid session"}
 
     limit        = int(limit)
     offset       = int(offset)
     current_date = frappe.utils.today()
-
-    customer_name = frappe.db.get_value("Customer", {"custom_customer_code": code}, "name")
-    if not customer_name:
-        return {"error": "Customer not found"}
 
     all_announcements = frappe.get_all(
         "Annonce mobile",
@@ -49,24 +37,27 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
         ],
         fields=["name", "title", "announcement_typ", "priority", "color",
                 "description", "banner_image", "publish_date"],
-        order_by="publish_date desc",
-        ignore_permissions=True
+        order_by="publish_date desc, name desc",
     )
 
-    valid_announcements = []
+    names = [ann.name for ann in all_announcements]
+    audience = frappe.get_all(
+        "Mobile Announcement Customer",
+        filters={"parenttype": "Annonce mobile", "parent": ["in", names],
+                 "parentfield": ["in", ["allowed", "banned"]]},
+        fields=["parent", "parentfield", "customer"],
+    ) if names else []
+    restricted = {row.parent for row in audience if row.parentfield == "allowed"}
+    allowed = {row.parent for row in audience if row.parentfield == "allowed" and row.customer == customer_name}
+    banned = {row.parent for row in audience if row.parentfield == "banned" and row.customer == customer_name}
+    hidden = banned | (restricted - allowed)
+    visible = [ann for ann in all_announcements if ann.name not in hidden]
 
-    for ann in all_announcements:
-        doc = frappe.get_doc("Annonce mobile", ann.name, ignore_permissions=True)
-
-        is_banned = any(row.customer == customer_name for row in doc.get("banned", []))
-        if is_banned:
-            continue
-
-        allowed_list = doc.get("allowed", [])
-        is_allowed = not allowed_list or any(row.customer == customer_name for row in allowed_list)
-
-        if is_allowed:
-            valid_announcements.append({
+    return {
+        "customer": customer_name,
+        "total_count": len(visible),
+        "announcements": [
+            {
                 "id":         ann.name,
                 "title":      ann.title,
                 "subtitle":   ann.description or "",
@@ -75,12 +66,7 @@ def get_announcements_by_customer_code(code=None, limit=10, offset=0):
                 "color":      ann.color or "#00A89C",
                 "postedTime": str(ann.publish_date or ""),
                 "image":      ann.banner_image,
-            })
-
-    paginated_list = valid_announcements[offset: offset + limit]
-
-    return {
-        "customer":      customer_name,
-        "total_count":   len(valid_announcements),
-        "announcements": paginated_list
+            }
+            for ann in visible[offset:offset + limit]
+        ],
     }

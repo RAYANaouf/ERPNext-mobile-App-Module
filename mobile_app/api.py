@@ -73,12 +73,17 @@ create_sales_order = frappe.whitelist(allow_guest=True, methods=["POST"])(orders
 get_customer_orders = frappe.whitelist(allow_guest=True, methods=["GET"])(orders.get_customer_orders)
 get_order_details = frappe.whitelist(allow_guest=True, methods=["GET"])(orders.get_order_details)
 
-search_items = _mobile_method(catalog.search_items)
-get_items_by_customer_code = _mobile_method(catalog.get_items_by_customer_code)
+search_customer_items = frappe.whitelist(allow_guest=True, methods=["GET"])(catalog.search_customer_items)
+search_employee_items = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(catalog.search_employee_items)
+search_items = search_employee_items
+get_customer_items = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(catalog.get_customer_items)
+get_items_by_customer_code = get_customer_items
 get_price_lists = _mobile_method(catalog.get_price_lists)
 
-get_notification_by_customer_code = _mobile_method(communications.get_notification_by_customer_code)
-get_announcements_by_customer_code = _mobile_method(communications.get_announcements_by_customer_code)
+get_customer_notifications = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(communications.get_customer_notifications)
+get_notification_by_customer_code = get_customer_notifications
+get_customer_announcements = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(communications.get_customer_announcements)
+get_announcements_by_customer_code = get_customer_announcements
 
 get_companies = _mobile_method(stock.get_companies)
 get_warehouses = _mobile_method(stock.get_warehouses)

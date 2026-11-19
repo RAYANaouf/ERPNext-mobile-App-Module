@@ -6,10 +6,12 @@ import frappe
 from frappe.utils import flt
 
 from mobile_app.auth import authenticate_employee
+from mobile_app.customer_sessions import current_customer
+
+PUBLIC_PRICE_LIST = "Public - Alger"
 
 
-def search_items(search_text=None, customer_code=None):
-
+def _matching_items(search_text, list_items):
     if not search_text:
         return []
 
@@ -21,7 +23,7 @@ def search_items(search_text=None, customer_code=None):
     if not re.match(r'^[\w\s\-\.+]+$', search_text, re.UNICODE):
         return {"status": "error", "message": "Unauthorized characters in search text"}
 
-    items = frappe.get_all(
+    return list_items(
         "Item",
         filters={"disabled": 0, "is_sales_item": 1},
         or_filters={
@@ -32,103 +34,84 @@ def search_items(search_text=None, customer_code=None):
         limit=10
     )
 
+
+def _customer_price_list(customer):
+    return frappe.db.get_value("Customer", customer, "default_price_list") or PUBLIC_PRICE_LIST
+
+
+def _selling_rates(items, price_list):
     if not items:
-        return []
-
-    price_list = "Public - Alger"
-    if customer_code:
-        customer_price_list = frappe.db.get_value(
-            "Customer",
-            {"custom_customer_code": customer_code},
-            "default_price_list"
-        )
-        if customer_price_list:
-            price_list = customer_price_list
-
+        return {}
     item_codes = [item["item_code"] for item in items]
 
-    prices_raw = frappe.get_all(
+    prices = frappe.get_all(
         "Item Price",
-        filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
-        fields=["item_code", "price_list_rate"]
+        filters={"item_code": ["in", item_codes], "price_list": ["in", [price_list, PUBLIC_PRICE_LIST]],
+                 "selling": 1},
+        fields=["item_code", "price_list", "price_list_rate"],
     )
-    price_map = {p["item_code"]: p["price_list_rate"] for p in prices_raw}
+    rates = {(row["price_list"], row["item_code"]): row["price_list_rate"] for row in prices}
+    return {
+        code: flt(rates.get((price_list, code)) or rates.get((PUBLIC_PRICE_LIST, code)))
+        for code in item_codes
+    }
 
-    fallback_map = {}
-    if price_list != "Public - Alger":
-        fallback_raw = frappe.get_all(
-            "Item Price",
-            filters={"item_code": ["in", item_codes], "price_list": "Public - Alger", "selling": 1},
-            fields=["item_code", "price_list_rate"]
-        )
-        fallback_map = {p["item_code"]: p["price_list_rate"] for p in fallback_raw}
 
+def search_customer_items(search_text=None):
+    customer = current_customer()
+    if not customer:
+        return {"error": "Invalid session"}
+    items = _matching_items(search_text, frappe.get_all)
+    if not isinstance(items, list) or not items:
+        return items
+    rates = _selling_rates(items, _customer_price_list(customer))
     for item in items:
-        code = item["item_code"]
-        rate = price_map.get(code) or fallback_map.get(code)
-        item["standard_rate"] = flt(rate) if rate else 0.0
-
+        item["standard_rate"] = rates[item["item_code"]]
     return items
 
 
-def get_items_by_customer_code(customer_code):
+def search_employee_items(search_text=None, token=None):
+    user = authenticate_employee(token)
+    if not user or user == "Guest" or not frappe.get_cached_value("User", user, "enabled"):
+        return {"error": "Invalid session"}
     try:
-        if not customer_code:
-            return {"status": "error", "message": "Missing customer_code"}
+        return _matching_items(search_text, frappe.get_list)
+    except frappe.PermissionError:
+        return {"error": "Access denied"}
 
-        price_list = frappe.db.get_value(
-            "Customer",
-            {"custom_customer_code": customer_code},
-            "default_price_list"
-        ) or "Public - Alger"
 
+def get_customer_items():
+    customer = current_customer()
+    if not customer:
+        return {"error": "Invalid session"}
+    try:
+        price_list = _customer_price_list(customer)
         items = frappe.get_all(
             "Item",
             filters={"disabled": 0, "is_sales_item": 1},
             fields=["item_code", "item_name", "description", "item_group", "stock_uom"]
         )
 
-        if not items:
-            return {"status": "success", "price_list": price_list, "items": []}
-
-        item_codes = [item["item_code"] for item in items]
-
-        customer_prices_raw = frappe.get_all(
-            "Item Price",
-            filters={"item_code": ["in", item_codes], "price_list": price_list, "selling": 1},
-            fields=["item_code", "price_list_rate"]
-        )
-        customer_price_map = {p["item_code"]: p["price_list_rate"] for p in customer_prices_raw}
-
-        fallback_price_map = {}
-        if price_list != "Public - Alger":
-            fallback_prices_raw = frappe.get_all(
-                "Item Price",
-                filters={"item_code": ["in", item_codes], "price_list": "Public - Alger", "selling": 1},
-                fields=["item_code", "price_list_rate"]
-            )
-            fallback_price_map = {p["item_code"]: p["price_list_rate"] for p in fallback_prices_raw}
-
+        rates = _selling_rates(items, price_list)
         result = []
         for item in items:
             code = item["item_code"]
-            rate = customer_price_map.get(code) or fallback_price_map.get(code) or 0.0
             result.append({
                 "item_code":   code,
                 "item_name":   item["item_name"],
                 "description": item.get("description") or "",
                 "item_group":  item.get("item_group") or "",
                 "uom":         item.get("stock_uom") or "Nos",
-                "rate":        float(rate),
+                "rate":        rates[code],
                 "currency":    "DZD",
                 "price_list":  price_list
             })
 
         return {"status": "success", "price_list": price_list, "items": result}
 
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Error get_items")
-        return {"status": "error", "message": str(e)}
+    except Exception:
+        frappe.log_error(title="Mobile catalog error", message=frappe.get_traceback())
+        return {"status": "error", "message": "Unable to load items"}
 
 
 def get_price_lists(token=None):
