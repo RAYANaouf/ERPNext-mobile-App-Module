@@ -56,7 +56,8 @@ _mobile_method = frappe.whitelist(allow_guest=True)
 login = _mobile_method(auth.login)
 get_my_user_name = frappe.whitelist(allow_guest=True, methods=["POST"])(auth.get_my_user_name)
 
-get_client_by_code = _mobile_method(customers.get_client_by_code)
+get_customer_profile = frappe.whitelist(allow_guest=True, methods=["GET", "POST"])(customers.get_customer_profile)
+get_client_by_code = get_customer_profile
 login_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.login_customer)
 logout_customer = frappe.whitelist(allow_guest=True, methods=["POST"])(customer_sessions.logout_customer)
 change_customer_code = frappe.whitelist(allow_guest=True, methods=["POST"])(customers.change_customer_code)

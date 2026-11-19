@@ -101,17 +101,18 @@ def get_last_stock_entries(token: str, limit: int = 20, offset: int = 0, search_
 
 
 def get_stock_entry_details_by_name(token: str, name: str):
-    if not name:
+    if not isinstance(name, str) or not name.strip():
         return {"error": "Missing Stock Entry name"}
 
     if not authenticate_employee(token):
         return {"error": "Invalid session"}
 
-    if not frappe.db.exists("Stock Entry", name):
-        return {"error": "Stock Entry not found"}
-
     try:
         doc = frappe.get_doc("Stock Entry", name)
+        doc.check_permission("read")
+    except frappe.DoesNotExistError:
+        frappe.clear_last_message()
+        return {"error": "Stock Entry not found"}
     except frappe.PermissionError:
         return {"error": "Access denied"}
 

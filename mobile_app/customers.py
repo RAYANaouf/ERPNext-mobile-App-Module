@@ -8,6 +8,10 @@ from frappe.rate_limiter import rate_limit
 from mobile_app import customer_sessions
 
 
+PROFILE_FIELDS = ["name", "customer_name", "email_id", "mobile_no", "custom_debt",
+                  "custom_debt_date", "default_price_list"]
+
+
 def _profile_for_code(code):
     frappe.flags.private_mobile_customer_response = True
     if not isinstance(code, str) or not code or len(code) > 140:
@@ -15,8 +19,7 @@ def _profile_for_code(code):
     customer = frappe.get_all(
         "Customer",
         filters={"custom_customer_code": code, "disabled": 0},
-        fields=["name", "customer_name", "email_id", "mobile_no", "custom_debt", "custom_debt_date",
-                "custom_customer_code", "default_price_list"],
+        fields=[*PROFILE_FIELDS, "custom_customer_code"],
         limit=2,
     )
     if len(customer) == 1 and hmac.compare_digest(customer[0].custom_customer_code.encode(), code.encode()):
@@ -25,9 +28,12 @@ def _profile_for_code(code):
 
 
 @rate_limit(limit=20, seconds=300)
-def get_client_by_code(code=None):
-    customer = _profile_for_code(code)
-    return {"customer": customer} if customer else {"error": "Customer not found"}
+def get_customer_profile():
+    owner = customer_sessions.current_customer()
+    if not owner:
+        return {"error": "Invalid session"}
+    customer = frappe.db.get_value("Customer", {"name": owner, "disabled": 0}, PROFILE_FIELDS, as_dict=True)
+    return {"customer": customer} if customer else {"error": "Invalid session"}
 
 
 @rate_limit(limit=10, seconds=300)

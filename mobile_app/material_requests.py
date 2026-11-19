@@ -78,16 +78,14 @@ def get_material_requests(token=None, limit=20, offset=0, search_text=None, stat
 
 def get_material_request_detail(token=None, name=None):
     try:
-        if not name:
+        if not isinstance(name, str) or not name.strip():
             return {"success": False, "error": "Missing name"}
 
         if not authenticate_employee(token):
             return {"success": False, "error": "Invalid session"}
 
-        if not frappe.db.exists("Material Request", name):
-            return {"success": False, "error": "Material Request not found"}
-
         doc = frappe.get_doc("Material Request", name)
+        doc.check_permission("read")
 
         items = []
         for it in doc.items:
@@ -118,6 +116,9 @@ def get_material_request_detail(token=None, name=None):
             "items": items
         }
 
+    except frappe.DoesNotExistError:
+        frappe.clear_last_message()
+        return {"success": False, "error": "Material Request not found"}
     except frappe.PermissionError:
         return {"success": False, "error": "Access denied"}
     except Exception as e:
