@@ -10,6 +10,28 @@ from mobile_app import customer_sessions
 
 PROFILE_FIELDS = ["name", "customer_name", "email_id", "mobile_no", "custom_debt",
                   "custom_debt_date", "default_price_list"]
+CODE_ALREADY_USED = "New code already used by another customer"
+
+
+def _customer_code_in_use(code, exclude_customer=None):
+    # Serialize code assignments, including when two writers request a previously unused code.
+    frappe.db.get_value("DocType", "Customer", "name", for_update=True)
+    filters = {"custom_customer_code": code}
+    if exclude_customer:
+        filters["name"] = ["!=", exclude_customer]
+    # A locking read sees the last writer's commit even under repeatable-read isolation.
+    return bool(frappe.db.get_value("Customer", filters, "name", for_update=True, order_by=None))
+
+
+def validate_customer_code(doc, method=None):
+    if not doc.has_value_changed("custom_customer_code"):
+        return
+    code = doc.get("custom_customer_code")
+    if code is not None and not isinstance(code, str):
+        frappe.throw(frappe._("Invalid customer code"))
+    doc.custom_customer_code = (code or "").strip() or None
+    if doc.custom_customer_code and _customer_code_in_use(doc.custom_customer_code, exclude_customer=doc.name):
+        frappe.throw(frappe._("This customer code is already in use. Choose another code."))
 
 
 def _profile_for_code(code):
@@ -58,17 +80,9 @@ def change_customer_code(old_code=None, new_code=None):
     if not customer:
         return {"success": False, "error": "Customer not found"}
 
-    existing = frappe.get_all(
-        "Customer",
-        filters={"custom_customer_code": new_code},
-        fields=["name"],
-        limit=1
-    )
-    if existing:
-        return {"success": False, "error": "New code already used by another customer"}
-
     try:
-        # Serialize concurrent rotations and recheck the secret under the row lock.
+        if _customer_code_in_use(new_code):
+            return {"success": False, "error": CODE_ALREADY_USED}
         current = frappe.db.get_value("Customer", customer.name, "custom_customer_code", for_update=True)
         if not current or not hmac.compare_digest(current.encode(), old_code.encode()):
             return {"success": False, "error": "Customer not found"}
@@ -80,9 +94,9 @@ def change_customer_code(old_code=None, new_code=None):
             "success":       True,
             "customer_name": customer.customer_name,
         }
-    except Exception as e:
+    except Exception:
         frappe.db.rollback()
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Unable to change customer code"}
 
 
 def create_customer_complaint(description=None, date_reception=None, reference=None):
